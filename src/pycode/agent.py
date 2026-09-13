@@ -6,9 +6,11 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from pycode.provider import LLMProvider
+from pycode.context import find_context_files, load_context
+from pycode.session import save_session, load_session, latest_session
 from pycode.tools import TOOL_SCHEMAS, dispatch_tool
 
 # ---------------------------------------------------------------------------
@@ -66,6 +68,8 @@ class Agent:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         system_prompt_extra: str = "",
+        project_root: Optional[str] = None,
+        auto_approve: bool = False,
         max_iterations: int = 30,
         verbose: bool = True,
     ):
@@ -78,13 +82,28 @@ class Agent:
         )
         self.max_iterations = max_iterations
         self.verbose = verbose
+        self.project_root = project_root or os.getcwd()
+        self.auto_approve = auto_approve
+        # _confirm is set by the CLI; returns False to decline a destructive tool
+        self._confirm: Optional[Callable[[str, Dict[str, Any]], bool]] = None
+
+        # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
+        auto_ctx = load_context(self.project_root)
+        combined_extra = "\n".join(p for p in [system_prompt_extra, auto_ctx] if p)
         self.messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": _build_system_prompt(system_prompt_extra)}
+            {"role": "system", "content": _build_system_prompt(combined_extra)}
         ]
+
+        # Public introspection helpers
+        self._loaded_context_files = find_context_files(self.project_root)
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def set_confirm(self, confirm: Optional[Callable[[str, Dict[str, Any]], bool]]) -> None:
+        """Set a confirmation callback for destructive tool calls."""
+        self._confirm = confirm
 
     def run(self, user_input: str) -> str:
         """Process user input and return the agent's final response."""
@@ -92,17 +111,25 @@ class Agent:
 
         for iteration in range(1, self.max_iterations + 1):
             if self.verbose:
-                print(f"\n[iteration {iteration}]", file=sys.stderr)
+                from pycode.tui import Spinner
+                with Spinner(f"iteration {iteration}"):
+                    try:
+                        response = self._call_llm()
+                    except Exception as exc:  # noqa: BLE001
+                        return f"[LLM error: {exc}]"
+            else:
+                try:
+                    response = self._call_llm()
+                except Exception as exc:  # noqa: BLE001
+                    return f"[LLM error: {exc}]"
 
-            # Get LLM response
-            response = self.provider.chat_stream(self.messages, TOOL_SCHEMAS)
             content = response.get("content", "")
             tool_calls = response.get("tool_calls", [])
 
             if content and self.verbose:
-                print(f"\n--- Assistant ---\n{content}\n", file=sys.stderr)
+                from pycode.tui import print_assistant
+                print_assistant(content)
 
-            # Append assistant message
             assistant_msg: Dict[str, Any] = {"role": "assistant"}
             if content:
                 assistant_msg["content"] = content
@@ -110,31 +137,34 @@ class Agent:
                 assistant_msg["tool_calls"] = tool_calls
             self.messages.append(assistant_msg)
 
-            # No tool calls means we're done
             if not tool_calls:
                 return content or "[no response]"
 
-            # Execute each tool call
             for tc in tool_calls:
                 tc_id = tc.get("id", "")
                 fn_name = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments", "{}")
 
-                # Parse arguments
                 try:
                     args: Dict[str, Any] = json.loads(raw_args) if raw_args else {}
                 except json.JSONDecodeError:
                     args = {}
 
                 if self.verbose:
-                    print(f"[tool: {fn_name}] {json.dumps(args, default=str)[:500]}", file=sys.stderr)
+                    from pycode.tui import print_tool_start
+                    print_tool_start(fn_name, json.dumps(args, default=str))
 
-                # Dispatch
-                result = dispatch_tool(fn_name, args)
+                result = dispatch_tool(
+                    fn_name,
+                    args,
+                    confirm=self._confirm,
+                    auto_approve=self.auto_approve,
+                )
 
                 if self.verbose:
-                    preview = result[:300] + "..." if len(result) > 300 else result
-                    print(f"[result: {fn_name}] {preview}", file=sys.stderr)
+                    from pycode.tui import print_tool_result
+                    ok = not (result.startswith('{"error"') or '"ok": false' in result)
+                    print_tool_result(fn_name, ok, result)
 
                 self.messages.append({
                     "role": "tool",
@@ -142,12 +172,45 @@ class Agent:
                     "content": result,
                 })
 
-        # Hit max iterations
         return "[max iterations reached]"
 
+    def _call_llm(self) -> Dict[str, Any]:
+        """Call the LLM provider, falling back to non-streaming if needed.
+
+        Normalizes the result to a dict with 'content' and 'tool_calls' keys
+        regardless of whether the provider returned a string or a dict.
+        """
+        try:
+            result = self.provider.chat_stream(self.messages, TOOL_SCHEMAS)
+        except Exception:
+            # Some providers (e.g. Venice) reject streaming; fall back
+            result = self.provider.chat(self.messages, tools=TOOL_SCHEMAS)
+
+        # Normalize: chat() returns a plain string; chat_stream() returns a dict
+        if isinstance(result, dict):
+            return result
+        return {"content": result or "", "tool_calls": []}
+
     def clear(self) -> None:
-        """Reset conversation history."""
-        self.messages = [self.messages[0]]  # keep system prompt
+        """Reset conversation history, keeping the system prompt."""
+        self.messages = [self.messages[0]]
+
+    # ------------------------------------------------------------------
+    # Session persistence
+    # ------------------------------------------------------------------
+
+    def save_session(self, path: Optional[str] = None) -> str:
+        """Persist the current conversation to a JSONL file."""
+        return save_session(self.messages, path=path, root=self.project_root)
+
+    @staticmethod
+    def restore_session(path: str) -> List[Dict[str, Any]]:
+        """Load a conversation from a JSONL session file."""
+        return load_session(path)
+
+    @staticmethod
+    def latest_session(root: Optional[str] = None) -> Optional[str]:
+        return latest_session(root)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -163,29 +226,24 @@ class Agent:
         """
         cfg: Dict[str, Any] = {}
 
-        # API key
         key = os.getenv("PYCODE_API_KEY", "")
         if not key:
-            # Fallback to common user-facing vars (user must set these)
             key = os.getenv("OPENAI_API_KEY", "")
         if key:
             cfg["api_key"] = key
 
-        # API base
         base = os.getenv("PYCODE_API_BASE", "")
         if not base:
             base = os.getenv("OPENAI_API_BASE", "")
         if base:
             cfg["api_base"] = base.rstrip("/")
 
-        # Model
         model = os.getenv("PYCODE_MODEL", "")
         if not model:
             model = os.getenv("OPENAI_MODEL", "deepseek-v4-1-flash")
         if model:
             cfg["model"] = model
 
-        # Temperature
         temp = os.getenv("PYCODE_TEMPERATURE", "")
         if temp:
             try:
@@ -193,7 +251,6 @@ class Agent:
             except ValueError:
                 pass
 
-        # Max tokens
         mt = os.getenv("PYCODE_MAX_TOKENS", "")
         if mt:
             try:
@@ -201,7 +258,6 @@ class Agent:
             except ValueError:
                 pass
 
-        # System prompt file
         spf = os.getenv("PYCODE_SYSTEM_PROMPT_FILE", "")
         if spf:
             p = Path(spf)

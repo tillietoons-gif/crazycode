@@ -18,7 +18,7 @@ import subprocess
 import urllib.request
 import urllib.error
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -366,11 +366,56 @@ TOOLS: Dict[str, Any] = {
 }
 
 
-def dispatch_tool(name: str, args: Dict[str, Any]) -> str:
-    """Call a tool by name, serialise the result to a JSON string."""
+# ---------------------------------------------------------------------------
+# Tool confirmation / sandbox
+# ---------------------------------------------------------------------------
+
+# Tools that mutate state and warrant a confirmation prompt
+_DESTRUCTIVE_TOOLS = {"write", "edit"}
+# Bash commands that are destructive even without confirmation
+_DESTRUCTIVE_CMD_RE = re.compile(
+    r"\b(rm\s|rm -|rm$|rm\b.*-f|drop\s+(table|database|schema)|"
+    r"truncate|git\s+push.*--force|git\s+reset.*--hard|git\s+clean|"
+    r"shutdown|reboot|mkfs|fdisk|dd\s+if=|chmod\s+777|userdel|shred)\b"
+)
+
+
+def is_destructive(name: str, args: Dict[str, Any]) -> bool:
+    """Heuristic: does this tool call mutate state destructively?"""
+    if name in _DESTRUCTIVE_TOOLS:
+        return True
+    if name == "bash":
+        cmd = args.get("command", "")
+        if _DESTRUCTIVE_CMD_RE.search(cmd):
+            return True
+        return False
+    return False
+
+
+def dispatch_tool(
+    name: str,
+    args: Dict[str, Any],
+    confirm: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
+    auto_approve: bool = False,
+) -> str:
+    """Call a tool by name, serialise the result to a JSON string.
+
+    Args:
+        name: tool name
+        args: tool arguments
+        confirm: optional callback (tool_name, args) -> bool; if it returns
+                 False the tool is skipped with an error result.
+        auto_approve: if True, skip all confirmations (sandbox mode).
+    """
     fn = TOOLS.get(name)
     if fn is None:
         return json.dumps({"error": f"Unknown tool: {name}"})
+
+    # Gate destructive tools behind confirmation
+    if not auto_approve and confirm is not None and is_destructive(name, args):
+        if not confirm(name, args):
+            return json.dumps({"error": f"Tool {name} was declined by the user"})
+
     try:
         result = fn(**args)
     except Exception as exc:  # noqa: BLE001

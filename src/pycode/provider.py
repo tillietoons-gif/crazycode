@@ -1,4 +1,4 @@
-"""LLM provider - OpenAI-compatible API client with streaming support."""
+"""LLM provider - OpenAI-compatible API client with SSE streaming + fallback."""
 
 from __future__ import annotations
 
@@ -10,8 +10,12 @@ from typing import Any, Dict, List, Optional
 import requests
 
 
+class LLMProviderError(Exception):
+    """Raised when the LLM API request fails."""
+
+
 class LLMProvider:
-    """OpenAI-compatible LLM API client."""
+    """OpenAI-compatible LLM API client with streaming support and non-streaming fallback."""
 
     def __init__(
         self,
@@ -38,47 +42,6 @@ class LLMProvider:
           - content: str
           - tool_calls: list of {id, type, function: {name, arguments}}
         """
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-        }
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
-
-        url = f"{self.api_base}/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
-
-        resp = requests.post(url, headers=headers, json=payload, timeout=120)
-        resp.raise_for_status()
-        data = resp.json()
-
-        choice = data["choices"][0]
-        msg = choice.get("message", {})
-
-        content = msg.get("content") or ""
-        tool_calls_raw = msg.get("tool_calls") or []
-
-        tool_calls = []
-        for tc in tool_calls_raw:
-            tool_calls.append({
-                "id": tc.get("id", ""),
-                "type": tc.get("type", "function"),
-                "function": {
-                    "name": tc.get("function", {}).get("name", ""),
-                    "arguments": tc.get("function", {}).get("arguments", "{}"),
-                },
-            })
-
-        return {
-            "content": content,
-            "tool_calls": tool_calls,
-        }
 
     def chat(self, messages: List[Dict[str, Any]], **kwargs) -> str:
         """Simple non-tool chat (for testing/debugging)."""
