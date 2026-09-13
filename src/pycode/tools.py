@@ -10,6 +10,7 @@ for the agent loop.
 
 from __future__ import annotations
 
+import difflib
 import glob as glob_mod
 import json
 import os
@@ -139,6 +140,41 @@ def tool_edit(path: str, old_string: str, new_string: str, replace_all: bool = F
         new_text = text.replace(old_string, new_string, 1)
     p.write_text(new_text, encoding="utf-8")
     return {"ok": True, "replacements": count if replace_all else 1, "path": path}
+
+
+def compute_diff(old_text: str, new_text: str, path: str = "") -> str:
+    """Return a unified diff between two text strings.
+
+    Used by the dry-run view to show what a write/edit would change
+    without actually modifying the file.
+    """
+    old_lines = (old_text or "").splitlines(keepends=True)
+    new_lines = (new_text or "").splitlines(keepends=True)
+    diff = difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=f"a/{path}" if path else "a/(existing)",
+        tofile=f"b/{path}" if path else "b/(new)",
+        n=2,
+    )
+    return "".join(diff) or "(no changes)"
+
+
+def dry_run_diff(path: str, new_content: str) -> Dict[str, Any]:
+    """Show what a write would change without applying it."""
+    p = Path(path)
+    if p.is_file():
+        old = p.read_text(encoding="utf-8")
+    else:
+        old = ""
+    diff = compute_diff(old, new_content, path)
+    return {
+        "dry_run": True,
+        "path": path,
+        "existed_before": p.is_file(),
+        "diff": diff,
+        "lines_old": len(old.splitlines()),
+        "lines_new": len(new_content.splitlines()),
+    }
 
 
 def tool_glob(pattern: str, path: Optional[str] = None) -> List[str]:
@@ -397,6 +433,8 @@ def dispatch_tool(
     args: Dict[str, Any],
     confirm: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
     auto_approve: bool = False,
+    dry_run: bool = False,
+    mcp_registry: Optional[Any] = None,
 ) -> str:
     """Call a tool by name, serialise the result to a JSON string.
 
@@ -406,10 +444,41 @@ def dispatch_tool(
         confirm: optional callback (tool_name, args) -> bool; if it returns
                  False the tool is skipped with an error result.
         auto_approve: if True, skip all confirmations (sandbox mode).
+        dry_run: if True, for write/edit show a diff instead of applying.
+        mcp_registry: optional MCPRegistry; if present and the tool name
+                      matches an MCP tool, it is routed there instead.
     """
+    # MCP routing: external tool plugins
+    if mcp_registry is not None:
+        mcp_result = mcp_registry.dispatch(name, args)
+        if mcp_result is not None:
+            return mcp_result
+
     fn = TOOLS.get(name)
     if fn is None:
         return json.dumps({"error": f"Unknown tool: {name}"})
+
+    # Dry-run: preview the diff instead of mutating the file
+    if dry_run and name in ("write", "edit"):
+        if name == "write":
+            preview = dry_run_diff(args.get("path", ""), args.get("content", ""))
+            return json.dumps(preview, ensure_ascii=False, default=str)
+        # edit: compute the would-be new content and diff it
+        p = Path(args.get("path", ""))
+        if p.is_file():
+            text = p.read_text(encoding="utf-8")
+            old = text.count(args.get("old_string", ""))
+            if old == 0:
+                return json.dumps({"error": "old_string not found in file", "dry_run": True})
+            rep_all = args.get("replace_all", False)
+            new_text = text.replace(args.get("old_string", ""), args.get("new_string", "")) if rep_all \
+                else text.replace(args.get("old_string", ""), args.get("new_string", ""), 1)
+            return json.dumps({
+                "dry_run": True,
+                "path": str(p),
+                "diff": compute_diff(text, new_text, str(p)),
+            }, ensure_ascii=False, default=str)
+        return json.dumps({"error": f"File not found: {args.get('path','?')}", "dry_run": True})
 
     # Gate destructive tools behind confirmation
     if not auto_approve and confirm is not None and is_destructive(name, args):

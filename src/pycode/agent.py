@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from pycode.provider import LLMProvider
+from pycode.providers import get_preset, detect_preset, PRESETS
 from pycode.context import find_context_files, load_context
+from pycode.context_manager import trim_messages, conversation_tokens, context_stats
 from pycode.session import save_session, load_session, latest_session
 from pycode.tools import TOOL_SCHEMAS, dispatch_tool
 
@@ -70,9 +72,20 @@ class Agent:
         system_prompt_extra: str = "",
         project_root: Optional[str] = None,
         auto_approve: bool = False,
+        dry_run: bool = False,
         max_iterations: int = 30,
+        max_context_tokens: int = 60_000,
         verbose: bool = True,
     ):
+        # Provider preset: if the user named a preset (openai/anthropic/ollama/venice/openrouter)
+        # but didn't give an explicit base, fill from the preset.
+        if model in PRESETS and not api_base:
+            preset = get_preset(model)
+            api_base = preset["api_base"]
+            model = preset.get("model") or model
+            if not api_key:
+                api_key = preset.get("api_key")
+
         self.provider = LLMProvider(
             api_key=api_key,
             api_base=api_base,
@@ -81,9 +94,12 @@ class Agent:
             max_tokens=max_tokens,
         )
         self.max_iterations = max_iterations
+        self.max_context_tokens = max_context_tokens
         self.verbose = verbose
         self.project_root = project_root or os.getcwd()
         self.auto_approve = auto_approve
+        self.dry_run = dry_run
+        self.mcp = None  # set by CLI via attach_mcp()
         # _confirm is set by the CLI; returns False to decline a destructive tool
         self._confirm: Optional[Callable[[str, Dict[str, Any]], bool]] = None
 
@@ -98,6 +114,20 @@ class Agent:
         self._loaded_context_files = find_context_files(self.project_root)
 
     # ------------------------------------------------------------------
+    # MCP plugin support
+    # ------------------------------------------------------------------
+
+    def attach_mcp(self, registry) -> None:
+        """Attach an MCPRegistry so external tool plugins are available."""
+        self.mcp = registry
+
+    def _all_tool_schemas(self) -> List[Dict[str, Any]]:
+        schemas = list(TOOL_SCHEMAS)
+        if self.mcp is not None:
+            schemas.extend(self.mcp.all_schemas())
+        return schemas
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -108,6 +138,12 @@ class Agent:
     def run(self, user_input: str) -> str:
         """Process user input and return the agent's final response."""
         self.messages.append({"role": "user", "content": user_input})
+
+        # Trim conversation to fit within the context budget before the LLM call
+        if len(self.messages) > 2:
+            self.messages = [self.messages[0]] + trim_messages(
+                self.messages, self.max_context_tokens, keep_recent=8
+            )
 
         for iteration in range(1, self.max_iterations + 1):
             if self.verbose:
@@ -159,6 +195,8 @@ class Agent:
                     args,
                     confirm=self._confirm,
                     auto_approve=self.auto_approve,
+                    dry_run=self.dry_run,
+                    mcp_registry=self.mcp,
                 )
 
                 if self.verbose:
@@ -180,11 +218,12 @@ class Agent:
         Normalizes the result to a dict with 'content' and 'tool_calls' keys
         regardless of whether the provider returned a string or a dict.
         """
+        schemas = self._all_tool_schemas()
         try:
-            result = self.provider.chat_stream(self.messages, TOOL_SCHEMAS)
+            result = self.provider.chat_stream(self.messages, schemas)
         except Exception:
             # Some providers (e.g. Venice) reject streaming; fall back
-            result = self.provider.chat(self.messages, tools=TOOL_SCHEMAS)
+            result = self.provider.chat(self.messages, tools=schemas)
 
         # Normalize: chat() returns a plain string; chat_stream() returns a dict
         if isinstance(result, dict):
@@ -194,6 +233,10 @@ class Agent:
     def clear(self) -> None:
         """Reset conversation history, keeping the system prompt."""
         self.messages = [self.messages[0]]
+
+    def context_usage(self) -> Dict[str, int]:
+        """Return token-usage stats for the current conversation."""
+        return context_stats(self.messages, self.max_context_tokens)
 
     # ------------------------------------------------------------------
     # Session persistence

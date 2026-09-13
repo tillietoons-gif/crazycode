@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import shlex
 import sys
 
 from pycode.agent import Agent
+from pycode.mcp import MCPRegistry
+from pycode.providers import PRESETS, get_preset, detect_preset
 from pycode.session import latest_session
 from pycode.tui import print_banner, c, bold, dim, result_badge
 
@@ -24,7 +28,6 @@ def _print_config(cfg: dict) -> None:
 
 def _confirm_prompt(tool: str, args: dict) -> bool:
     """Interactive confirmation for destructive tool calls."""
-    from pycode.tools import is_destructive
     summary = ""
     if tool == "bash":
         summary = args.get("command", "")
@@ -40,12 +43,44 @@ def _confirm_prompt(tool: str, args: dict) -> bool:
     return answer in ("y", "yes")
 
 
+def _build_mcp_registry(specs) -> MCPRegistry:
+    """Build an MCPRegistry from a list of JSON/JSONL MCP server specs.
+
+    Each spec is a JSON object: {"name": "x", "command": ["npx","..."]}
+    (either one object per line, or an array of objects).
+    """
+    reg = MCPRegistry()
+    for path in specs:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read().strip()
+        if not text:
+            continue
+        # Array form
+        if text.startswith("["):
+            entries = json.loads(text)
+        else:
+            # JSONL: one object per line
+            entries = [json.loads(line) for line in text.splitlines() if line.strip()]
+        for entry in entries:
+            name = entry.get("name")
+            command = entry.get("command")
+            if not name or not command:
+                print(f"{c('yellow','warn:')} MCP spec missing name/command: {entry}", file=sys.stderr)
+                continue
+            if isinstance(command, str):
+                command = shlex.split(command)
+            reg.add(name, command, env=entry.get("env"))
+    return reg
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="pycode - Python AI Coding Agent")
     parser.add_argument("prompt", nargs="*", help="Optional initial prompt (if omitted, interactive mode)")
     parser.add_argument("--api-key", help="LLM API key (or set PYCODE_API_KEY)")
     parser.add_argument("--api-base", help="LLM API base URL (or set PYCODE_API_BASE)")
-    parser.add_argument("--model", help="Model name (or set PYCODE_MODEL)")
+    parser.add_argument("--model", help="Model name, or a preset (openai/anthropic/ollama/venice/openrouter)")
+    parser.add_argument("--preset", choices=list(PRESETS) + ["auto"], default="auto",
+                        help="Provider preset (default: auto-detect from env)")
     parser.add_argument("--temperature", type=float, help="Sampling temperature")
     parser.add_argument("--max-tokens", type=int, help="Max response tokens")
     parser.add_argument("--system-prompt-file", help="Path to extra system instructions")
@@ -54,19 +89,32 @@ def main() -> None:
     parser.add_argument("--non-interactive", action="store_true", help="Run prompt then exit (no REPL)")
     parser.add_argument("--auto-approve", action="store_true",
                         help="Auto-approve destructive tools (skip confirmations)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview write/edit changes as diffs instead of applying")
+    parser.add_argument("--context-budget", type=int, default=60000,
+                        help="Context token budget for auto-trimming (default: 60000)")
     parser.add_argument("--resume", metavar="FILE",
                         help="Resume from a saved JSONL session file")
     parser.add_argument("--project-root", default=os.getcwd(),
                         help="Project root for context file discovery (default: cwd)")
+    parser.add_argument("--mcp", metavar="FILE", action="append", default=[],
+                        help="MCP server config (JSONL/JSON), repeatable. "
+                             "e.g. --mcp mcp_servers.jsonl")
 
     args = parser.parse_args()
 
-    # Load config from env, overlay with CLI flags
+    # Determine provider config: preset takes priority over raw env, but explicit
+    # --api-key/--api-base/--model flags override everything.
     env_cfg = Agent.load_env_config()
+    if args.preset == "auto":
+        preset_cfg = detect_preset()
+    else:
+        preset_cfg = get_preset(args.preset)
+
     cfg = {
-        "api_key": args.api_key or env_cfg.get("api_key"),
-        "api_base": args.api_base or env_cfg.get("api_base"),
-        "model": args.model or env_cfg.get("model"),
+        "api_key": args.api_key or env_cfg.get("api_key") or preset_cfg.get("api_key"),
+        "api_base": args.api_base or env_cfg.get("api_base") or preset_cfg.get("api_base"),
+        "model": args.model or env_cfg.get("model") or preset_cfg.get("model"),
         "temperature": args.temperature if args.temperature is not None else env_cfg.get("temperature"),
         "max_tokens": args.max_tokens if args.max_tokens is not None else env_cfg.get("max_tokens"),
         "system_prompt_extra": args.system_prompt_file and open(args.system_prompt_file).read()
@@ -82,7 +130,9 @@ def main() -> None:
         system_prompt_extra=cfg.get("system_prompt_extra", ""),
         project_root=args.project_root,
         auto_approve=args.auto_approve,
+        dry_run=args.dry_run,
         max_iterations=args.max_iterations,
+        max_context_tokens=args.context_budget,
         verbose=not args.quiet,
     )
 
@@ -90,9 +140,18 @@ def main() -> None:
     if not args.auto_approve and not args.non_interactive and sys.stdin.isatty():
         agent.set_confirm(_confirm_prompt)
 
+    # Attach MCP servers if provided
+    if args.mcp:
+        registry = _build_mcp_registry(args.mcp)
+        registry.connect_all()
+        agent.attach_mcp(registry)
+        if not args.quiet:
+            n_tools = len(registry.all_schemas())
+            print(dim(f"  mcp: {len(registry.servers)} server(s), {n_tools} tool(s)"), file=sys.stderr)
+
     if not cfg.get("api_key"):
         print("Warning: No API key found.", file=sys.stderr)
-        print("  Set PYCODE_API_KEY or --api-key, or set OPENAI_API_KEY.", file=sys.stderr)
+        print("  Set PYCODE_API_KEY or --api-key, or use a preset with its env key.", file=sys.stderr)
 
     print_banner()
     _print_config({k: v for k, v in cfg.items() if v})
@@ -151,15 +210,31 @@ def main() -> None:
             print("Conversation cleared.", file=sys.stderr)
             continue
         if user_input in (":help", "/help", "help", "?"):
+            usage = agent.context_usage()
             print(
                 "  commands:\n"
                 "    :clear          reset conversation\n"
                 "    /save [file]    save session to JSONL (or auto-named)\n"
                 "    /resume [file]  load a saved session (latest if omitted)\n"
                 "    /sessions       list saved sessions\n"
-                "    quit / exit    stop\n",
+                "    /context        show context window usage\n"
+                "    /preset NAME    (show available provider presets)\n"
+                f"    quit / exit     stop\n\n"
+                f"  context: {usage['used']}/{usage['budget']} tokens ({usage['pct']}%)\n"
+                f"  presets: {', '.join(PRESETS)}\n",
                 file=sys.stderr,
             )
+            continue
+        if user_input.startswith("/context"):
+            usage = agent.context_usage()
+            print(
+                f"  context window: {usage['used']}/{usage['budget']} tokens "
+                f"({usage['pct']}%), {usage['messages']} messages",
+                file=sys.stderr,
+            )
+            continue
+        if user_input.startswith("/preset"):
+            print("  presets: " + ", ".join(PRESETS), file=sys.stderr)
             continue
         if user_input.startswith("/save"):
             parts = user_input.split(None, 1)
