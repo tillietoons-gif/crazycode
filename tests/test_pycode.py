@@ -76,7 +76,7 @@ class TestProvider(unittest.TestCase):
     def test_init_defaults(self):
         p = LLMProvider(api_key="test-key")
         self.assertEqual(p.api_key, "test-key")
-        self.assertEqual(p.model, "gpt-4o")
+        self.assertEqual(p.model, "deepseek-v4-1-flash")
         self.assertIsInstance(p.max_tokens, int)
 
     def test_init_custom(self):

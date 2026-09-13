@@ -22,8 +22,8 @@ class LLMProvider:
         max_tokens: Optional[int] = None,
     ):
         self.api_key = api_key or os.getenv("PYCODE_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
-        self.api_base = (api_base or os.getenv("PYCODE_API_BASE", "") or os.getenv("OPENAI_API_BASE", "") or "https://api.openai.com/v1").rstrip("/")
-        self.model = model or os.getenv("PYCODE_MODEL", "gpt-4o")
+        self.api_base = (api_base or os.getenv("PYCODE_API_BASE", "") or os.getenv("OPENAI_API_BASE", "") or "https://api.venice.ai/api/v1").rstrip("/")
+        self.model = model or os.getenv("PYCODE_MODEL", "deepseek-v4-1-flash")
         self.temperature = temperature if temperature is not None else 0.3
         self.max_tokens = max_tokens or 8192
 
