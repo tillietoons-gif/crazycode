@@ -26,8 +26,8 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
   result, and repeats until the task is done (up to a configurable iteration
   cap).
 - **14 built-in tools** — `bash`, `read`, `write`, `edit`, `glob`, `grep`,
-  `webfetch`, `web_search`, `view_image`, `todo`, plus background jobs:
-  `bash_background`, `job_output`, `job_list`, `job_kill`.
+  `webfetch`, `web_search`, `view_image`, `todo`, plus background jobs
+  (`bash_background`, `job_output`, `job_list`, `job_kill`) and `symbols`.
 - **Real SSE token streaming** with live output; any streaming failure falls
   back to a single request automatically.
 - **Plan mode** — `/plan <goal>` drafts a numbered plan, then executes each
@@ -71,6 +71,14 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
   additional tools.
 - **Project context auto-load** — `CLAUDE.md`, `.pycode.md`, `AGENTS.md`, and
   a built-in template generator.
+
+### Codebase intelligence
+- **Project symbol map** — regex-based index of ~10 languages, cached under
+  `.pycode/index/`, injected as a compact map into the system prompt.
+- **`symbols` tool** — the LLM can find definitions (`find`), usages (`refs`),
+  or ask for the whole-project map (`map`).
+- **Smart `read`** — `symbol=NAME` reads around a definition instead of
+  offset/limit line-hunting.
 
 ### Terminal UX
 - **ANSI markdown + code highlighter** (python/js/ts/go/rust/bash/json/sql).
@@ -264,6 +272,8 @@ Output
 | `/preset` | List provider presets |
 | `/theme [name]` | Show or switch the color theme |
 | `/plan <goal>` | Draft a numbered plan, then execute each step |
+| `/map` | Show the project symbol map |
+| `/symbols <name>` | Look up symbols in the project index |
 | `help` / `?` | Full command list + aliases |
 | `quit` / `exit` / `:q` | Stop |
 
@@ -280,6 +290,7 @@ src/pycode/
   failover.py         multi-provider failover chain
   config.py           layered TOML config (user + project)
   interrupts.py       Esc-to-abort controller + listener
+  index.py            project symbol index (10+ languages, mtime cache)
   jobs.py             background job manager (bash_background / job_*)
   hooks.py            pre_tool / post_tool / on_turn shell hooks
   tools.py            the 14 tools + dispatch + destructive detection
@@ -297,7 +308,7 @@ src/pycode/
   tui*.py             terminal UI (markdown, status bar, feed, reviewer,
                        picker, context view, subagent trace, inspector, pager)
   tui_theme.py        named color themes
-tests/                unittest suite (219 tests across 10 modules)
+tests/                unittest suite (244 tests across 11 modules)
 .env.example          copy-pasteable configuration template
 .pycode/              project-level config, policies & auto-saved sessions
 ```

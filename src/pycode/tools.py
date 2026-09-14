@@ -139,12 +139,82 @@ def tool_job_kill(job_id: str) -> Dict[str, Any]:
     return get_job_manager().kill(job_id)
 
 
-def tool_read(path: str, offset: int = 1, limit: int = _MAX_READ_LINES) -> str:
-    """Read a file (max 200 lines per call, 1-indexed offset)."""
+def tool_read(path: str, offset: int = 1, limit: int = _MAX_READ_LINES,
+              symbol: Optional[str] = None) -> str:
+    """Read a file (max 200 lines per call, 1-indexed offset).
+
+    If ``symbol`` is given, read around that definition instead: the window
+    starts a few lines above the symbol's definition line.
+    """
+    if symbol:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            return f"Error: cannot read {path}"
+        line = _find_symbol_line(text, symbol)
+        if line is None:
+            return f"Error: symbol {symbol!r} not found in {path}"
+        offset = max(1, line - 5)
     try:
         return _safe_read_file(path, offset=offset, limit=limit)
     except Exception as exc:  # noqa: BLE001
         return f"Error: {exc}"
+
+
+_SYM_DEF_RE = re.compile(
+    r"^\s*(?:async\s+)?(?:def|fn|function|func|class|struct|enum|trait|interface|type)\s+"
+    r"([A-Za-z_]\w*)"
+)
+
+
+def _find_symbol_line(text: str, symbol: str) -> Optional[int]:
+    """1-indexed line of ``symbol``'s definition in ``text`` (heuristic)."""
+    for i, line in enumerate(text.splitlines(), 1):
+        m = _SYM_DEF_RE.match(line)
+        if m and m.group(1) == symbol:
+            return i
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Symbol index tool
+# ---------------------------------------------------------------------------
+
+def tool_symbols(query: str = "", mode: str = "find", kind: Optional[str] = None,
+                 path: Optional[str] = None, limit: int = 25) -> Dict[str, Any]:
+    """Query the project symbol index.
+
+    Modes: find (definitions matching query), refs (references to query),
+    map (whole-project summary). Builds/refreshes the index lazily.
+    """
+    from pycode.index import ProjectIndex
+    idx = get_project_index()
+    if not idx.files:
+        idx.build()
+    if mode == "map":
+        return {"map": idx.summary(max_chars=4000), "stats": idx.stats()}
+    if mode == "refs":
+        if not query:
+            return {"error": "refs mode requires a query"}
+        return {"query": query, "references": idx.references(query, limit=limit)}
+    # default: find definitions
+    results = idx.find(query, kind=kind, limit=limit)
+    if path:
+        results = [r for r in results if path in r["path"]]
+    return {"query": query, "mode": "find", "results": results}
+
+
+_PROJECT_INDEX = None
+
+
+def get_project_index(root: Optional[str] = None) -> Any:
+    """Lazily-created shared ProjectIndex for the agent's working directory."""
+    global _PROJECT_INDEX
+    if _PROJECT_INDEX is None or root is not None:
+        from pycode.index import ProjectIndex
+        _PROJECT_INDEX = ProjectIndex(root or os.getcwd())
+    return _PROJECT_INDEX
 
 
 def tool_write(path: str, content: str) -> Dict[str, Any]:
@@ -381,13 +451,14 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "read",
-            "description": "Read a file. Supports offset/limit for large files.",
+            "description": "Read a file. Supports offset/limit for large files, or symbol=NAME to read around a definition.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Absolute or relative file path"},
                     "offset": {"type": "integer", "description": "Line number to start from (1-indexed, default 1)"},
                     "limit": {"type": "integer", "description": "Max lines to read (default 200)"},
+                    "symbol": {"type": "string", "description": "Read around this definition (function/class name) instead of using offset"},
                 },
                 "required": ["path"],
             },
@@ -579,6 +650,26 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "symbols",
+            "description": "Query the project symbol index. Modes: find (default) lists definitions matching query; "
+                           "refs lists references to query; map returns a whole-project summary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Symbol name (or substring) to look up"},
+                    "mode": {"type": "string", "enum": ["find", "refs", "map"],
+                             "description": "find=definitions, refs=usages, map=project overview (default find)"},
+                    "kind": {"type": "string",
+                             "description": "Optional kind filter (def/class/fn/func/struct/trait/...)"},
+                    "path": {"type": "string", "description": "Restrict results to files under this path substring"},
+                    "limit": {"type": "integer", "description": "Max results (default 25)"},
+                },
+            },
+        },
+    },
 ]
 
 # Name -> callable map
@@ -597,6 +688,7 @@ TOOLS: Dict[str, Any] = {
     "job_output": tool_job_output,
     "job_list": tool_job_list,
     "job_kill": tool_job_kill,
+    "symbols": tool_symbols,
 }
 
 

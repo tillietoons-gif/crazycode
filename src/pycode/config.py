@@ -42,7 +42,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on 3.10
 PROJECT_CONFIG_REL = os.path.join(".pycode", "config.toml")
 
 _KNOWN_KEYS = {
-    "theme", "auto_approve", "quiet", "plain", "cost",
+    "theme", "auto_approve", "quiet", "plain", "cost", "no_map",
     "context_budget", "max_iterations",
     "model", "api_base", "temperature", "max_tokens",
     "hooks",

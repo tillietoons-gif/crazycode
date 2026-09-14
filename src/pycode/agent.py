@@ -85,6 +85,7 @@ class Agent:
         max_iterations: int = 30,
         max_context_tokens: int = 60_000,
         verbose: bool = True,
+        use_project_map: bool = True,
     ):
         # Provider preset: if the user named a preset (openai/anthropic/ollama/venice/openrouter)
         # but didn't give an explicit base, fill from the preset.
@@ -138,8 +139,23 @@ class Agent:
         # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
         auto_ctx = load_context(self.project_root)
         combined_extra = "\n".join(p for p in [system_prompt_extra, auto_ctx] if p)
+        sys_prompt = _build_system_prompt(combined_extra)
+
+        # Project map: compact symbol summary injected into the system prompt
+        if use_project_map:
+            try:
+                from pycode.tools import get_project_index
+                idx = get_project_index(self.project_root)
+                if not idx.files:
+                    idx.build()
+                summary = idx.summary(max_chars=3000)
+                if summary:
+                    sys_prompt += f"\n\n## Project map\n{summary}"
+            except Exception:  # noqa: BLE001 - map is best-effort
+                pass
+
         self.messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": _build_system_prompt(combined_extra)}
+            {"role": "system", "content": sys_prompt}
         ]
 
         # Public introspection helpers

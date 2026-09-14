@@ -26,6 +26,8 @@ COMMANDS: Dict[str, str] = {
     "/new-context": "generate CLAUDE.md project-instructions file",
     "/plan": "plan-then-execute: draft steps for a goal and run each",
     "/preset": "show available provider presets",
+    "/map": "show the project symbol map",
+    "/symbols": "look up symbols in the project index (/symbols name)",
     "/rewind": "roll back to a checkpoint (or list them)",
     "/branch": "branch from a checkpoint with new instruction",
     "/resume": "load a saved session",

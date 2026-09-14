@@ -148,6 +148,8 @@ def main() -> None:
                         help="TUI color theme (overrides config file; default: default)")
     parser.add_argument("--no-config", action="store_true",
                         help="Ignore .pycode/config.toml and user config files")
+    parser.add_argument("--no-map", action="store_true",
+                        help="Disable the project symbol map in the system prompt")
     parser.add_argument("--no-tab-complete", action="store_true",
                         help="Disable slash-command tab completion")
     parser.add_argument("--export-html", metavar="FILE",
@@ -222,6 +224,7 @@ def main() -> None:
         max_iterations=max_iterations,
         max_context_tokens=context_budget,
         verbose=not args.quiet,
+        use_project_map=not (args.no_map or bool(file_cfg.get("no_map"))),
     )
 
     # Wire up confirmation unless auto-approve / yolo is on
@@ -415,6 +418,32 @@ def main() -> None:
             continue
         if user_input.startswith("/preset"):
             print("  presets: " + ", ".join(PRESETS), file=sys.stderr)
+            continue
+        if user_input.startswith("/map"):
+            from pycode.tools import get_project_index
+            idx = get_project_index(args.project_root)
+            if not idx.files:
+                stats = idx.build()
+                print(dim(f"  indexed {stats['scanned']} file(s)"), file=sys.stderr)
+            print(idx.summary(max_chars=8000), file=sys.stderr)
+            st = idx.stats()
+            print(dim(f"  ({st['files']} files, {st['symbols']} symbols)"), file=sys.stderr)
+            continue
+        if user_input.startswith("/symbols"):
+            parts = user_input.split(None, 1)
+            query = parts[1].strip() if len(parts) > 1 else ""
+            from pycode.tools import get_project_index
+            idx = get_project_index(args.project_root)
+            if not idx.files:
+                idx.build()
+            if not query:
+                print("usage: /symbols <name-substring>  (also: /map)", file=sys.stderr)
+                continue
+            results = idx.find(query)
+            if not results:
+                print(f"  no symbols matching {query!r}", file=sys.stderr)
+            for r in results[:25]:
+                print(f"  {r['kind']:<8} {r['name']:<24} {os.path.relpath(r['path'], args.project_root)}:{r['line']}", file=sys.stderr)
             continue
         if user_input.startswith("/theme"):
             parts = user_input.split(None, 1)
