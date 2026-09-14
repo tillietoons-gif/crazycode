@@ -69,6 +69,13 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 ### Extensibility
 - **MCP support** — connect external Model-Context-Protocol servers as
   additional tools.
+- **Python tool SDK** — drop `SCHEMA` + `run(args)` modules into
+  `.pycode/tools/`; they appear as regular tools (permission-guarded, and
+  `DESTRUCTIVE = True` adds a confirmation prompt).
+- **Custom slash commands** — `.pycode/commands/<name>.md` prompt templates
+  become REPL commands; `$ARGS` is replaced with the typed arguments.
+- **Tool-file hooks** — plugins may export a `HOOKS` dict that merges into
+  the agent's hook runner.
 - **Project context auto-load** — `CLAUDE.md`, `.pycode.md`, `AGENTS.md`, and
   a built-in template generator.
 
@@ -176,6 +183,40 @@ on_turn   = "echo turn done"
 ```
 
 Events: `pre_tool`, `post_tool`, `on_turn`.
+
+### Plugins
+
+**Python tools** — create `.pycode/tools/wc_chars.py`:
+
+```python
+SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "wc_chars",
+        "description": "Count characters in a file",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+}
+
+def run(args):          # args is the arguments dict
+    ...
+```
+
+It becomes a callable tool for the LLM on the next launch. A plugin whose
+name collides with a built-in is skipped; a broken plugin is reported and
+skipped, never fatal.
+
+**Custom slash commands** — create `.pycode/commands/review.md`:
+
+```markdown
+Review the file $ARGS for style issues and report the top 3 findings.
+```
+
+Then `/review src/app.py` expands to the prompt with `$ARGS` replaced.
 
 ---
 
@@ -292,6 +333,7 @@ src/pycode/
   interrupts.py       Esc-to-abort controller + listener
   index.py            project symbol index (10+ languages, mtime cache)
   jobs.py             background job manager (bash_background / job_*)
+  plugins.py          user tool SDK, custom slash commands, tool-file hooks
   hooks.py            pre_tool / post_tool / on_turn shell hooks
   tools.py            the 14 tools + dispatch + destructive detection
   permissions.py      .pycode/permissions.toml policy engine
@@ -308,7 +350,7 @@ src/pycode/
   tui*.py             terminal UI (markdown, status bar, feed, reviewer,
                        picker, context view, subagent trace, inspector, pager)
   tui_theme.py        named color themes
-tests/                unittest suite (244 tests across 11 modules)
+tests/                unittest suite (260 tests across 12 modules)
 .env.example          copy-pasteable configuration template
 .pycode/              project-level config, policies & auto-saved sessions
 ```

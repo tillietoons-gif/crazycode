@@ -54,6 +54,9 @@ ALIASES: Dict[str, str] = {
     "?": "/help",
 }
 
+# user-defined slash commands (populated by the CLI from .pycode/commands/)
+USER_COMMANDS: set = set()
+
 
 def canonicalize(user_input: str) -> str:
     """Expand a typed command/alias to its canonical form.
@@ -76,7 +79,8 @@ def canonicalize(user_input: str) -> str:
 def _complete(prefix: str) -> List[str]:
     """Return candidate completions for `prefix`."""
     cands: List[str] = []
-    for cmd in sorted(set(list(COMMANDS.keys()) + list(ALIASES.keys()))):
+    all_cmds = sorted(set(list(COMMANDS.keys()) + list(ALIASES.keys()) + list(USER_COMMANDS)))
+    for cmd in all_cmds:
         if cmd.startswith(prefix) or (prefix.lstrip("/:") and cmd.startswith(prefix.lstrip("/:"))):
             cands.append(cmd)
     # also complete known session filenames for /save, /resume, /sessions

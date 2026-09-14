@@ -708,6 +708,9 @@ _DESTRUCTIVE_CMD_RE = re.compile(
 
 def is_destructive(name: str, args: Dict[str, Any]) -> bool:
     """Heuristic: does this tool call mutate state destructively?"""
+    from pycode.plugins import USER_DESTRUCTIVE
+    if name in USER_DESTRUCTIVE:
+        return True
     if name in _DESTRUCTIVE_TOOLS:
         return True
     if name in ("bash", "bash_background"):

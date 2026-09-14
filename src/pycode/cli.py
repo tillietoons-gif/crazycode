@@ -182,6 +182,22 @@ def main() -> None:
         except ValueError as e:
             print(f"{c('yellow','warn:')} {e}", file=sys.stderr)
 
+    # User plugins: python tools, custom slash commands, tool-file hooks
+    from pycode import plugins
+    plugin_summary = plugins.register_user_tools(args.project_root)
+    if plugin_summary["loaded"] and not args.quiet:
+        print(dim(f"  plugins: {len(plugin_summary['loaded'])} user tool(s): "
+                  + ", ".join(plugin_summary["loaded"])), file=sys.stderr)
+    for err in plugin_summary["errors"]:
+        print(f"{c('yellow','warn:')} plugin {os.path.basename(err['path'])}: {err['error']}",
+              file=sys.stderr)
+    user_commands = plugins.load_user_commands(args.project_root)
+    if user_commands and not args.quiet:
+        print(dim("  commands: " + ", ".join("/" + n for n in sorted(user_commands))),
+              file=sys.stderr)
+    from pycode.tui_commands import USER_COMMANDS
+    USER_COMMANDS.update("/" + name for name in user_commands)
+
     # Plain mode disables all fancy TUI enhancements
     args.use_tui = not args.plain and sys.stderr.isatty()
 
@@ -234,6 +250,10 @@ def main() -> None:
     # Lifecycle hooks from the config file's [hooks] section
     from pycode.hooks import HookRunner
     hook_runner = HookRunner.from_config(file_cfg)
+    # Tool-file HOOKS dicts merge into the same runner
+    user_hook_cmds = plugins.collect_user_hooks(args.project_root)
+    if user_hook_cmds:
+        hook_runner.commands = plugins.merge_hooks(hook_runner.commands, user_hook_cmds)
     if hook_runner.enabled:
         agent.attach_hooks(hook_runner)
         if not args.quiet:
@@ -598,6 +618,15 @@ def main() -> None:
                 print("invalid /branch syntax: /branch <index> <instruction>", file=sys.stderr)
             continue
 
+        # User-defined slash commands (from .pycode/commands/*.md): expand the
+        # template and fall through to the normal turn handling
+        words = user_input.split()
+        cmd_name = words[0].lstrip("/") if words else ""
+        if cmd_name in user_commands:
+            args_str = user_input[len(words[0]):].strip()
+            user_input = plugins.apply_command(user_commands[cmd_name]["template"], args_str)
+            print(dim(f"  [{cmd_name}] prompt: {user_input[:120]}"), file=sys.stderr)
+
         # Show the activity feed after each turn (TUI mode only)
         if args.use_tui and agent.feed.entries:
             print(dim(agent.feed.last_n(6)), file=sys.stderr)
@@ -607,7 +636,7 @@ def main() -> None:
             args.dry_run and args.use_tui and sys.stdin.isatty() and not args.non_interactive
         )
         result = _run_with_abort(
-            agent, args.use_tui,
+            agent,
             user_input=user_input,
             interactive_review=interactive_review,
             use_tui=args.use_tui,
