@@ -100,6 +100,12 @@ def main() -> None:
     parser.add_argument("--mcp", metavar="FILE", action="append", default=[],
                         help="MCP server config (JSONL/JSON), repeatable. "
                              "e.g. --mcp mcp_servers.jsonl")
+    parser.add_argument("--permissions", metavar="FILE",
+                        help="Path to a permissions.toml policy file")
+    parser.add_argument("--yolo", action="store_true",
+                        help="YOLO mode: skip all confirmations (dangerous)")
+    parser.add_argument("--enable-subagents", action="store_true",
+                        help="Expose the `task` subagent tool to the LLM")
 
     args = parser.parse_args()
 
@@ -129,16 +135,30 @@ def main() -> None:
         max_tokens=cfg["max_tokens"],
         system_prompt_extra=cfg.get("system_prompt_extra", ""),
         project_root=args.project_root,
-        auto_approve=args.auto_approve,
+        auto_approve=args.auto_approve or args.yolo,
         dry_run=args.dry_run,
         max_iterations=args.max_iterations,
         max_context_tokens=args.context_budget,
         verbose=not args.quiet,
     )
 
-    # Wire up confirmation unless auto-approve is on
-    if not args.auto_approve and not args.non_interactive and sys.stdin.isatty():
+    # Wire up confirmation unless auto-approve / yolo is on
+    if not args.auto_approve and not args.yolo and not args.non_interactive and sys.stdin.isatty():
         agent.set_confirm(_confirm_prompt)
+
+    # Load a custom permissions policy if requested
+    if args.permissions:
+        from pycode.permissions import PermissionGuard, make_permission_confirm
+        guard = PermissionGuard.from_file(args.permissions)
+        agent._permissions = guard
+        if not args.yolo and sys.stdin.isatty():
+            agent.set_confirm(make_permission_confirm(guard, prompt=_confirm_prompt))
+        if not args.quiet:
+            print(dim(f"  permissions: {guard.source}"), file=sys.stderr)
+
+    # Show loaded permission policy (auto-discovered) even without a flag
+    if not args.quiet and agent._permissions.source != "builtin":
+        print(dim(f"  permissions: {agent._permissions.source}"), file=sys.stderr)
 
     # Attach MCP servers if provided
     if args.mcp:
@@ -238,6 +258,32 @@ def main() -> None:
         if user_input.startswith("/preset"):
             print("  presets: " + ", ".join(PRESETS), file=sys.stderr)
             continue
+        if user_input.startswith("/rewind"):
+            pts = agent.rewind_points()
+            if not pts:
+                print("No checkpoints recorded yet.", file=sys.stderr)
+                continue
+            parts = user_input.split(None, 1)
+            if len(parts) > 1:
+                try:
+                    target = int(parts[1].strip())
+                except ValueError:
+                    target = None
+                    print("usage: /rewind <checkpoint-index>", file=sys.stderr)
+            else:
+                target = None
+            if target is None:
+                print("\n  Rewind points:", file=sys.stderr)
+                for p in pts:
+                    print(f"    {p}", file=sys.stderr)
+                print("  Usage: /rewind <index> (optional note after)", file=sys.stderr)
+                continue
+            if target >= len(agent.rewinder.checkpoints):
+                print(f"checkpoint {target} out of range (0-{len(agent.rewinder.checkpoints)-1})", file=sys.stderr)
+                continue
+            agent.rewind(target, note="rewound by user")
+            print(f"Rewound to checkpoint {target}.", file=sys.stderr)
+            continue
         if user_input.startswith("/new-context") or user_input.startswith("/context-file"):
             from pycode.scaffold import generate, exists
             target = "CLAUDE.md"
@@ -276,6 +322,42 @@ def main() -> None:
             else:
                 for s in sessions[:10]:
                     print(f"  {s}", file=sys.stderr)
+            continue
+
+        # Rewind commands
+        if user_input.startswith("/rewind"):
+            parts = user_input.split(None, 1)
+            idx = parts[1].strip() if len(parts) > 1 else ""
+            points = agent.rewind_points()
+            if not points:
+                print("No checkpoints recorded yet.", file=sys.stderr)
+                continue
+            if idx in ("", "list", "points"):
+                for p in points:
+                    print(f"  {p}", file=sys.stderr)
+                continue
+            try:
+                target = int(idx)
+                note = input("  rewind note (optional, Enter to skip): ").strip() or None
+                count = agent.rewind(target, note=note)
+                print(f"Rewound to checkpoint #{target} ({count} messages).", file=sys.stderr)
+            except ValueError:
+                print(f"invalid checkpoint index: {idx}", file=sys.stderr)
+            except IndexError:
+                print(f"checkpoint #{idx} out of range", file=sys.stderr)
+            continue
+        if user_input.startswith("/branch"):
+            parts = user_input.split(None, 1)
+            if len(parts) < 2:
+                print("usage: /branch <checkpoint-index> <new instruction>", file=sys.stderr)
+                continue
+            try:
+                target = int(parts[1].split()[0])
+                new_input = " ".join(parts[1].split()[1:])
+                count = agent.branch_from(target, new_input)
+                print(f"Branch created from #{target} ({count} messages).", file=sys.stderr)
+            except (ValueError, IndexError):
+                print("invalid /branch syntax: /branch <index> <instruction>", file=sys.stderr)
             continue
 
         result = agent.run(user_input, interactive_review=args.dry_run and sys.stdin.isatty())

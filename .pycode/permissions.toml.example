@@ -1,0 +1,24 @@
+# pycode permission policy
+#
+# Copy this file to .pycode/permissions.toml to activate project-level
+# tool gating. Every pycode run auto-loads it if present.
+#
+# All keys are optional. Omit a key to keep the built-in default.
+
+# [tools]
+# Which tools the agent may call. Omit to allow all built-in tools.
+# allow = ["read", "glob", "grep", "bash", "edit", "write"]
+
+# [tools]
+# Extra bash substrings to deny (merged with the built-in blocklist:
+# rm -rf /, shutdown, mkfs, fork bomb, git push --force, DROP DATABASE, etc.)
+# bash_blocklist = ["sudo", "curl ... | sh"]
+
+# [tools]
+# Restrict write/edit to a directory (relative to project root).
+# write_root = "src/"
+
+# [tools]
+# YOLO mode: skip every confirmation prompt. The built-in catastrophic
+# bash blocklist still applies.
+# yolo = false

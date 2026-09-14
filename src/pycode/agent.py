@@ -13,6 +13,9 @@ from pycode.providers import get_preset, detect_preset, PRESETS
 from pycode.context import find_context_files, load_context
 from pycode.context_manager import trim_messages, conversation_tokens, context_stats
 from pycode.session import save_session, load_session, latest_session
+from pycode.permissions import PermissionGuard, make_permission_confirm
+from pycode.rewind import RewindManager
+from pycode.subagents import SubagentRegistry, task_tool_schema
 from pycode.tools import TOOL_SCHEMAS, dispatch_tool
 
 # ---------------------------------------------------------------------------
@@ -105,6 +108,12 @@ class Agent:
         # Staged dry-run changes, applied via a DiffReviewer after the tool loop
         self._pending_diffs: List[Dict[str, Any]] = []
 
+        # Permission guard: load project policy if present
+        self._permissions = PermissionGuard.from_project(self.project_root)
+        # Subagent dispatcher + rewind manager
+        self.subagents = SubagentRegistry(self)
+        self.rewinder = RewindManager()
+
         # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
         auto_ctx = load_context(self.project_root)
         combined_extra = "\n".join(p for p in [system_prompt_extra, auto_ctx] if p)
@@ -125,6 +134,7 @@ class Agent:
 
     def _all_tool_schemas(self) -> List[Dict[str, Any]]:
         schemas = list(TOOL_SCHEMAS)
+        schemas.append(task_tool_schema())  # the `task` subagent tool
         if self.mcp is not None:
             schemas.extend(self.mcp.all_schemas())
         return schemas
@@ -146,6 +156,9 @@ class Agent:
                 staged write/edit diff for approval before applying.
         """
         self.messages.append({"role": "user", "content": user_input})
+
+        # Record a checkpoint at this user turn so the agent can rewind to it
+        self.checkpoint(label=" ".join(user_input.split())[:40])
 
         # Trim conversation to fit within the context budget before the LLM call
         if len(self.messages) > 2:
@@ -203,6 +216,21 @@ class Agent:
                     from pycode.tui import print_tool_start
                     print_tool_start(fn_name, json.dumps(args, default=str))
 
+                # Route the `task` subagent tool to the subagent registry
+                if fn_name == "task":
+                    result = self.subagents.run_task(
+                        task=args.get("task", ""),
+                        system_prompt=args.get("system_prompt"),
+                        tools=args.get("tools"),
+                        model=args.get("model"),
+                    )
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": result,
+                    })
+                    continue
+
                 result = dispatch_tool(
                     fn_name,
                     args,
@@ -211,6 +239,24 @@ class Agent:
                     dry_run=self.dry_run,
                     mcp_registry=self.mcp,
                 )
+
+                # Permission guard: apply the project policy
+                decision = self._permissions.check(fn_name, args)
+                if not decision.allowed and not self.auto_approve:
+                    result = json.dumps({
+                        "error": f"Permission denied: {decision.reason}",
+                        "tool": fn_name,
+                    }, ensure_ascii=False)
+                    # still record it so the LLM sees the denial
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": result,
+                    })
+                    if self.verbose:
+                        from pycode.tui import print_tool_result
+                        print_tool_result(fn_name, False, f"denied: {decision.reason}")
+                    continue
 
                 # When dry_run is on, stage mutating changes for the reviewer
                 if self.dry_run and fn_name in ("write", "edit"):
@@ -307,6 +353,46 @@ class Agent:
     def context_usage(self) -> Dict[str, int]:
         """Return token-usage stats for the current conversation."""
         return context_stats(self.messages, self.max_context_tokens)
+
+    # ------------------------------------------------------------------
+    # Rewind / branching
+    # ------------------------------------------------------------------
+
+    def checkpoint(self, label: str = "") -> int:
+        """Snapshot the current conversation. Returns the checkpoint index."""
+        cp = self.rewinder.snapshot(self.messages, label)
+        return cp.index
+
+    def rewind(self, index: int, note: Optional[str] = None) -> int:
+        """Roll back the conversation to checkpoint `index`.
+
+        Optionally append a short `note` as a system message so the agent
+        knows why it's re-planning. Returns the new message count.
+        """
+        restored = self.rewinder.rewind_to(index, self.messages)
+        self.messages = restored
+        if note:
+            self.messages.append({"role": "system", "content": f"[rewind] {note}"})
+        return len(self.messages)
+
+    def branch_from(self, index: int, new_user_input: str) -> int:
+        """Branch: go to checkpoint `index` and append `new_user_input`.
+
+        Returns the new message count.
+        """
+        new_msgs = [{"role": "user", "content": new_user_input}]
+        branch_msgs = self.rewinder.branch(index, new_msgs)
+        self.messages = branch_msgs
+        return len(self.messages)
+
+    def rewind_points(self) -> List[str]:
+        """Return a human-readable list of rewind points."""
+        return self.rewinder.list()
+
+    def auto_checkpoint(self) -> None:
+        """Record a checkpoint at the current state (no-op if empty)."""
+        if len(self.messages) > 1:
+            self.checkpoint()
 
     # ------------------------------------------------------------------
     # Session persistence

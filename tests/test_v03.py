@@ -171,8 +171,10 @@ class TestAgentDryRunAndMCP(unittest.TestCase):
         reg = MCPRegistry()
         agent.attach_mcp(reg)
         self.assertIs(agent.mcp, reg)
-        # schemas should be just the built-ins when no server connected
-        self.assertEqual(len(agent._all_tool_schemas()), len(__import__("pycode.tools", fromlist=["TOOL_SCHEMAS"]).TOOL_SCHEMAS))
+        # schemas = built-in TOOL_SCHEMAS + the `task` subagent tool,
+        # plus any connected MCP tools (none here).
+        from pycode.tools import TOOL_SCHEMAS
+        self.assertEqual(len(agent._all_tool_schemas()), len(TOOL_SCHEMAS) + 1)
 
 
 if __name__ == "__main__":
