@@ -13,6 +13,11 @@ from pycode.mcp import MCPRegistry
 from pycode.providers import PRESETS, get_preset, detect_preset
 from pycode.session import latest_session
 from pycode.tui import print_banner, c, bold, dim, result_badge
+from pycode.tui_commands import install_completion, canonicalize, help_text
+from pycode.tui_markdown import print_markdown
+from pycode.tui_feed import ActivityFeed
+from pycode.tui_statusbar import update_status
+from pycode.tui_diff_review import InteractiveDiffReviewer
 
 
 def _print_config(cfg: dict) -> None:
@@ -112,8 +117,15 @@ def main() -> None:
                         help="Show token/cost accounting on every turn")
     parser.add_argument("--no-cost", action="store_true",
                         help="Disable cost accounting entirely")
+    parser.add_argument("--plain", action="store_true",
+                        help="Disable fancy TUI (markdown, status bar, feed, keyboard review) "
+                             "- plain text output only")
+    parser.add_argument("--no-tab-complete", action="store_true",
+                        help="Disable slash-command tab completion")
 
     args = parser.parse_args()
+    # Plain mode disables all fancy TUI enhancements
+    args.use_tui = not args.plain and sys.stderr.isatty()
 
     # Determine provider config: preset takes priority over raw env, but explicit
     # --api-key/--api-base/--model flags override everything.
@@ -203,6 +215,10 @@ def main() -> None:
     if args.no_cost:
         agent.cost_tracker = None  # type: ignore[assignment]
 
+    # Install slash-command tab completion (TTY only)
+    if args.use_tui and not args.no_tab_complete and sys.stdin.isatty():
+        install_completion()
+
     if not cfg.get("api_key"):
         print("Warning: No API key found.", file=sys.stderr)
         print("  Set PYCODE_API_KEY or --api-key, or use a preset with its env key.", file=sys.stderr)
@@ -253,33 +269,24 @@ def main() -> None:
             break
 
         user_input = user_input.strip()
+        # canonicalize aliases (":s" -> "/save", "??" -> "/help", etc.)
+        user_input = canonicalize(user_input)
         if not user_input:
             continue
-        if user_input.lower() in ("quit", "exit", "q"):
+        if user_input.lower() in ("quit", "exit", "q", "/quit"):
             print("Bye.", file=sys.stderr)
             break
 
         # Built-in slash/colon commands
-        if user_input == ":clear" or user_input.lower() == "clear":
+        if user_input == "/clear" or user_input.lower() == "clear":
             agent.clear()
             print("Conversation cleared.", file=sys.stderr)
             continue
-        if user_input in (":help", "/help", "help", "?"):
+        if user_input in ("/help", ":help", "help", "?"):
+            print(help_text(), file=sys.stderr)
             usage = agent.context_usage()
             print(
-                "  commands:\n"
-                "    :clear          reset conversation\n"
-                "    /save [file]    save session to JSONL (or auto-named)\n"
-                "    /resume [file]  load a saved session (latest if omitted)\n"
-                "    /sessions       list saved sessions\n"
-                "    /context        show context window usage\n"
-                "    /cost           show token/cost accounting for the session\n"
-                "    /rewind [n]     roll back to checkpoint n (list if omitted)\n"
-                "    /branch n instr branch from checkpoint n\n"
-                "    /new-context    generate CLAUDE.md project-instructions file\n"
-                "    /preset NAME    (show available provider presets)\n"
-                f"    quit / exit     stop\n\n"
-                f"  context: {usage['used']}/{usage['budget']} tokens ({usage['pct']}%)\n"
+                f"\n  context: {usage['used']}/{usage['budget']} tokens ({usage['pct']}%)\n"
                 f"  presets: {', '.join(PRESETS)}\n",
                 file=sys.stderr,
             )
@@ -411,14 +418,44 @@ def main() -> None:
                 print("invalid /branch syntax: /branch <index> <instruction>", file=sys.stderr)
             continue
 
-        result = agent.run(user_input, interactive_review=args.dry_run and sys.stdin.isatty())
-        print(result, "\n")
+        # Show the activity feed after each turn (TUI mode only)
+        if args.use_tui and agent.feed.entries:
+            print(dim(agent.feed.last_n(6)), file=sys.stderr)
 
-        # Per-turn cost when enabled
+        # Interactive keyboard diff review when in TUI + dry-run mode
+        interactive_review = (
+            args.dry_run and args.use_tui and sys.stdin.isatty() and not args.non_interactive
+        )
+        result = agent.run(
+            user_input,
+            interactive_review=interactive_review,
+            use_tui=args.use_tui,
+        )
+
+        # Render the agent's final response: markdown-highlighted in TUI mode,
+        # plain text otherwise.
+        if args.use_tui:
+            print_markdown(result, use_color=True)
+        else:
+            print(result, "\n")
+
+        # Per-turn cost + live status bar when enabled
         if args.cost and agent.cost_tracker is not None:
             rep = agent.cost_report()
             print(dim(f"  [cost] last turn ~${rep['last_turn_cost_usd']:.4f} | "
                       f"session ~${rep['session_cost_usd']:.4f}"), file=sys.stderr)
+        if args.use_tui and agent.cost_tracker is not None:
+            usage = agent.context_usage()
+            rep = agent.cost_report()
+            update_status(
+                iteration=1,
+                max_iterations=agent.max_iterations,
+                ctx_used=usage["used"],
+                ctx_budget=usage["budget"],
+                cost_session=rep.get("session_cost_usd", 0.0),
+                model=rep.get("model", agent.provider.model),
+                use_color=True,
+            )
 
 
 if __name__ == "__main__":

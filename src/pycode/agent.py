@@ -120,6 +120,9 @@ class Agent:
         self.rewinder = RewindManager()
         # Token / cost accounting for the whole session
         self.cost_tracker = CostTracker(model=self.provider.model)
+        # Activity feed: append-only log of every tool call for the TUI
+        from pycode.tui_feed import ActivityFeed
+        self.feed = ActivityFeed(use_color=False)
 
         # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
         auto_ctx = load_context(self.project_root)
@@ -169,13 +172,15 @@ class Agent:
         """Set a confirmation callback for destructive tool calls."""
         self._confirm = confirm
 
-    def run(self, user_input: str, interactive_review: bool = False) -> str:
+    def run(self, user_input: str, interactive_review: bool = False, use_tui: bool = False) -> str:
         """Process user input and return the agent's final response.
 
         Args:
             user_input: the prompt
             interactive_review: if True (and dry_run is on), present each
                 staged write/edit diff for approval before applying.
+            use_tui: if True, the dry-run reviewer uses the keyboard-driven
+                InteractiveDiffReviewer (TUI) when interactive_review is on.
         """
         self.messages.append({"role": "user", "content": user_input})
 
@@ -220,7 +225,7 @@ class Agent:
                 final = content or "[no response]"
                 # Apply staged dry-run changes (if any) before returning
                 if self.dry_run and self._pending_diffs:
-                    final += self._apply_pending_diffs(interactive=interactive_review)
+                    final += self._apply_pending_diffs(interactive=interactive_review, use_tui=use_tui)
                 self._pending_diffs = []
                 return final
 
@@ -246,6 +251,7 @@ class Agent:
                         tools=args.get("tools"),
                         model=args.get("model"),
                     )
+                    self.feed.end(tc_id, "task", args, result, ok=True, mcp=False)
                     self.messages.append({
                         "role": "tool",
                         "tool_call_id": tc_id,
@@ -253,6 +259,7 @@ class Agent:
                     })
                     continue
 
+                self.feed.begin(tc_id, fn_name, args)
                 result = dispatch_tool(
                     fn_name,
                     args,
@@ -269,6 +276,7 @@ class Agent:
                         "error": f"Permission denied: {decision.reason}",
                         "tool": fn_name,
                     }, ensure_ascii=False)
+                    self.feed.end(tc_id, fn_name, args, result, ok=False)
                     # still record it so the LLM sees the denial
                     self.messages.append({
                         "role": "tool",
@@ -291,9 +299,11 @@ class Agent:
                     except json.JSONDecodeError:
                         pass
 
+                ok = not (result.startswith('{"error"') or '"ok": false' in result)
+                self.feed.end(tc_id, fn_name, args, result, ok=ok, mcp=False)
+
                 if self.verbose:
                     from pycode.tui import print_tool_result
-                    ok = not (result.startswith('{"error"') or '"ok": false' in result)
                     print_tool_result(fn_name, ok, result)
 
                 self.messages.append({
@@ -335,25 +345,44 @@ class Agent:
         """Reset conversation history, keeping the system prompt."""
         self.messages = [self.messages[0]]
 
-    def _apply_pending_diffs(self, interactive: bool = False) -> str:
+    def _apply_pending_diffs(self, interactive: bool = False, use_tui: bool = False) -> str:
         """Apply staged dry-run changes via the DiffReviewer.
+
+        When `use_tui` and `interactive` are both True, a keyboard-driven
+        reviewer (i/a/r/h/n/q/?) is used instead of the auto-apply path.
 
         Returns a short summary line appended to the agent's response.
         """
-        from pycode.diff_reviewer import DiffReviewer
         if not self._pending_diffs:
             return ""
-        reviewer = DiffReviewer(auto_approve=self.auto_approve)
-        for change in self._pending_diffs:
-            reviewer.stage(change)
-        summary = reviewer.review() if interactive else self._auto_apply(reviewer)
-        applied = summary.get("approved", 0)
-        rejected = summary.get("rejected", 0)
-        self._pending_diffs = []
+        if interactive and use_tui and self._pending_diffs:
+            from pycode.tui_diff_review import InteractiveDiffReviewer
+            reviewer = InteractiveDiffReviewer(
+                pending=self._pending_diffs,
+                apply_fn=lambda tool, args: self._apply_change(tool, args),
+                use_color=True,
+            )
+            summary = reviewer.run()
+            self._pending_diffs = []
+            applied = summary.get("approved", 0) + summary.get("held", 0)
+            rejected = summary.get("rejected", 0)
+        else:
+            from pycode.diff_reviewer import DiffReviewer
+            reviewer = DiffReviewer(auto_approve=self.auto_approve)
+            for change in self._pending_diffs:
+                reviewer.stage(change)
+            summary = reviewer.review() if interactive else self._auto_apply(reviewer)
+            applied = summary.get("approved", 0)
+            rejected = summary.get("rejected", 0)
+            self._pending_diffs = []
         note = f"\n\n[dry-run] applied {applied} change(s)"
         if rejected:
             note += f", rejected {rejected}"
         return note
+
+    def _apply_change(self, tool: str, args: dict) -> None:
+        """Apply a single staged change by re-dispatching without dry_run."""
+        dispatch_tool(tool, args, confirm=self._confirm, auto_approve=True)
 
     def _auto_apply(self, reviewer) -> Dict[str, Any]:
         """Apply all staged changes without prompting (non-interactive review)."""
