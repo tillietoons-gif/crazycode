@@ -1,0 +1,341 @@
+# pycode
+
+A Python-based AI coding agent — a Claude Code alternative that runs anywhere
+Python 3.10+ does, with **zero heavyweight dependencies** (only `requests`).
+
+pycode is an autonomous coding agent: you give it a natural-language task, and
+it plans, reads/writes files, runs shell commands, searches code, and fetches
+docs — using a tool-calling loop against any OpenAI-compatible LLM (OpenAI,
+Anthropic, Ollama, Venice, OpenRouter, and more).
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  pycode · v0.8.0                                                 │
+│                                                                  │
+│  10 tools · 5 provider presets · MCP plugins · subagents        │
+│  session rewind · cost accounting · 157 passing tests            │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Features
+
+### Core agent loop
+- **Tool-calling loop** — the LLM plans a step, calls a tool, observes the
+  result, and repeats until the task is done (up to a configurable iteration
+  cap).
+- **10 built-in tools** — `bash`, `read`, `write`, `edit`, `glob`, `grep`,
+  `webfetch`, `web_search`, `view_image`, `todo`.
+- **Persistent conversation** with checkpointed history.
+
+### Multi-provider
+- **Provider presets** — one-line setup for OpenAI, Anthropic, Ollama,
+  Venice, OpenRouter (plus auto-detection from env vars).
+- **Provider failover** — a config-driven chain that tries each provider in
+  order and sticks to the last one that succeeded.
+- **Prompt caching** — a byte-stable system-prompt prefix so caching-enabled
+  providers hit the cache.
+- **Streaming + non-streaming fallback** — automatic.
+
+### Safety & control
+- **Permission model** — `.pycode/permissions.toml` policy: tool allowlists,
+  a built-in catastrophic-bash blocklist, `write_root` sandbox, and a YOLO
+  mode.
+- **Dry-run diff review** — `write`/`edit` changes are staged and shown as
+  diffs; a keyboard reviewer (`i/a/r/h/n/q/?`) gates application.
+- **Destructive-action confirmations** — `rm -rf /`, `shutdown`,
+  `git push --force`, `DROP DATABASE`, … are blocked by default.
+
+### Recovery & introspection
+- **Session save/resume** to JSONL, plus an arrow-key session picker.
+- **Checkpoint rewind / branching** — roll back to any user turn and try a
+  different path.
+- **Subagents** — the `task` tool spawns a focused child agent that returns a
+  summary, keeping the parent context clean.
+- **Cost accounting** — per-turn and session token/cost estimates with a live
+  status bar.
+- **HTML session export** — a self-contained styled report of any session.
+
+### Extensibility
+- **MCP support** — connect external Model-Context-Protocol servers as
+  additional tools.
+- **Project context auto-load** — `CLAUDE.md`, `.pycode.md`, `AGENTS.md`, and
+  a built-in template generator.
+
+### Terminal UX
+- **ANSI markdown + code highlighter** (python/js/ts/go/rust/bash/json/sql).
+- **Live status bar** for context, cost, and model.
+- **Activity feed** with ✓/✗/→ glyphs and expandable detail.
+- **Slash-command tab-completion**, aliases, and a `/help` listing.
+
+---
+
+## Installation
+
+```bash
+# from this repository
+pip install -e .
+
+# or install globally (provides the `pycode` command)
+pip install .
+```
+
+Requires Python ≥ 3.10. The only runtime dependency is `requests`.
+
+---
+
+## Configuration
+
+pycode reads LLM credentials from environment variables (or CLI flags).
+Copy the example and export the values you need:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PYCODE_API_KEY` / `OPENAI_API_KEY` | – | LLM API key |
+| `PYCODE_API_BASE` / `OPENAI_API_BASE` | Venice | Base URL for the OpenAI-compatible API |
+| `PYCODE_MODEL` / `OPENAI_MODEL` | `deepseek-v4-1-flash` | Model name |
+| `PYCODE_TEMPERATURE` | `0.3` | Sampling temperature |
+| `PYCODE_MAX_TOKENS` | `8192` | Max response tokens |
+| `PYCODE_SYSTEM_PROMPT_FILE` | – | Path to extra system instructions |
+
+You can also use a named preset, which fills in the base URL + model + key env
+var for you:
+
+| Preset | Default model | Key env var |
+|---|---|---|
+| `openai` | `gpt-4o` | `OPENAI_API_KEY` |
+| `anthropic` | `claude-sonnet-4-5` | `ANTHROPIC_API_KEY` |
+| `ollama` | `llama3.1:8b` | (local, optional) |
+| `venice` | `deepseek-v4-1-flash` | `VENICE_API_KEY` |
+| `openrouter` | `anthropic/claude-3.5-sonnet` | `OPENROUTER_API_KEY` |
+
+---
+
+## Quick start
+
+```bash
+# 1. configure a provider (pick one)
+export OPENAI_API_KEY="sk-..."            # or use --preset ollama for local
+
+# 2. run a one-shot task
+pycode "create a hello-world Flask app and a test for it"
+
+# 3. or start an interactive session
+pycode
+```
+
+Useful one-liners:
+
+```bash
+# local Ollama (free, no key)
+pycode --preset ollama "explain this repo"
+
+# preview changes before they apply, then approve each diff
+pycode --dry-run "refactor the auth module"
+
+# show live token/cost accounting
+pycode --cost "build the CLI parser"
+
+# run everything unattended
+pycode --auto-approve "run the test suite and fix failures"
+```
+
+---
+
+## CLI reference
+
+```
+pycode [PROMPT...] [OPTIONS]
+
+PROMPT            Optional initial prompt (omit for interactive REPL)
+
+Provider
+  --api-key, --api-base, --model    Override credentials
+  --preset {openai,anthropic,ollama,venice,openrouter,auto}
+  --temperature, --max-tokens
+  --system-prompt-file PATH
+
+Safety / review
+  --dry-run          Preview write/edit changes as diffs
+  --auto-approve     Skip confirmations
+  --yolo             Auto-approve + skip all confirmations (dangerous)
+  --permissions PATH Load a permissions.toml policy
+
+Context / limits
+  --context-budget N  Context token budget (default 60000)
+  --max-iterations N  Max tool-loop iterations (default 30)
+  --project-root PATH
+
+Extensibility
+  --mcp FILE        MCP server config (repeatable)
+  --failover FILE   Provider failover JSON
+  --enable-subagents
+
+Sessions
+  --resume FILE     Resume from a saved JSONL session
+  --export-html FILE   Export the session to styled HTML on exit
+
+Cost / TUI
+  --cost / --no-cost
+  --plain           Plain text output (disable all TUI)
+  --no-tab-complete
+
+Output
+  --quiet, --non-interactive
+```
+
+### In-REPL commands
+
+| Command | Description |
+|---|---|
+| `:clear` / `:c` | Reset the conversation |
+| `/save [file]` | Save the session to JSONL |
+| `/resume [file]` | Load a saved session (latest if omitted) |
+| `/sessions` | Interactive picker of saved sessions |
+| `/rewind [n]` | Roll back to checkpoint *n* (or list them) |
+| `/branch n instr` | Branch from checkpoint *n* with a new instruction |
+| `/context` | Context-window usage bar |
+| `/cost` | Token/cost accounting for the session |
+| `/config` | Inspect provider chain, permissions, and MCP servers |
+| `/new-context` | Generate a `CLAUDE.md` project-instructions file |
+| `/export [file]` | Export the session to styled HTML |
+| `/preset` | List provider presets |
+| `help` / `?` | Full command list + aliases |
+| `quit` / `exit` / `:q` | Stop |
+
+---
+
+## Project layout
+
+```
+src/pycode/
+  agent.py            core agent loop, tool dispatch, checkpoints, subagents
+  cli.py              argparse CLI + interactive REPL
+  provider.py         OpenAI-compatible client (stream + fallback)
+  providers.py        provider presets & auto-detection
+  failover.py         multi-provider failover chain
+  tools.py            the 10 tools + dispatch + destructive detection
+  permissions.py      .pycode/permissions.toml policy engine
+  subagents.py        task-tool subagent dispatch
+  rewind.py           checkpoint / branch manager
+  session.py          JSONL session save/load
+  session_export.py   styled HTML export
+  context.py          CLAUDE.md / AGENTS.md auto-load
+  context_manager.py  token estimation + auto-trim
+  cost.py             token/cost accounting
+  mcp.py              MCP stdio client
+  scaffold.py         CLAUDE.md template generator
+  onboarding.py       first-run setup guidance
+  tui*.py             terminal UI (markdown, status bar, feed, reviewer,
+                       picker, context view, subagent trace, inspector, pager)
+tests/                unittest suite (157 tests across 8 modules)
+.env.example          copy-pasteable configuration template
+.pycode/              project-level policies & auto-saved sessions
+```
+
+---
+
+## Project-specific rules (optional)
+
+Drop a `CLAUDE.md` (or `.pycode.md`, `AGENTS.md`) in your project root and
+pycode auto-loads it into the system prompt. Generate a starter file with:
+
+```bash
+python -m pycode.scaffold        # auto-detects the project and writes ./CLAUDE.md
+python -m pycode.scaffold --name AGENTS.md --show   # preview to stdout
+```
+
+---
+
+## Using MCP servers
+
+Connect external tools via a JSON config:
+
+```bash
+pycode --mcp mcp_servers.jsonl
+```
+
+`mcp_servers.jsonl` (one object per line, or a JSON array):
+
+```json
+{"name": "github", "command": ["npx", "-y", "@modelcontextprotocol/server-github"], "env": {"GITHUB_TOKEN": "ghp_..."}}
+```
+
+MCP tools appear alongside the built-ins, exposed to the LLM with the name
+`mcp_<server>_<tool>` (e.g. `mcp_github_search`), and the agent routes calls
+back to the owning server.
+
+---
+
+## Provider failover
+
+Configure a chain that tries providers in order:
+
+```bash
+pycode --failover providers.json "my task"
+```
+
+```json
+{
+  "default": 0,
+  "providers": [
+    {"name": "venice",     "api_key": "VENICE_ADMIN_KEY_...", "api_base": "https://api.venice.ai/api/v1", "model": "deepseek-v4-1-flash"},
+    {"name": "openrouter", "api_key": "sk-or-...",            "api_base": "https://openrouter.ai/api/v1", "model": "anthropic/claude-3.5-sonnet"},
+    {"name": "ollama",     "api_base": "http://localhost:11434/v1", "model": "llama3.1:8b"}
+  ]
+}
+```
+
+The first provider that answers is used; later calls stick to it.
+
+---
+
+## Security model
+
+By default, pycode **denies** catastrophic bash commands and **confirms**
+any state-mutating action. You can tighten this with a policy file:
+
+```toml
+# .pycode/permissions.toml
+allow = ["read", "glob", "grep", "bash", "edit", "write"]
+write_root = "src/"            # writes only under src/
+# bash_blocklist = ["sudo"]    # extra denied substrings
+# yolo = false                 # set true to skip confirmations
+```
+
+The built-in blocklist (always active) includes `rm -rf /`, `shutdown`,
+`reboot`, `mkfs`, `dd if=/dev/zero`, the fork bomb, `git push --force`,
+`DROP DATABASE`, and `TRUNCATE TABLE`.
+
+For unattended runs, use `--auto-approve` (skips confirmations but keeps the
+blocklist) or `--yolo` (skips everything except the hard-coded catastrophic
+list).
+
+---
+
+## Development
+
+```bash
+# run the test suite
+python -m unittest discover -s tests        # 157 tests
+
+# run a single module's tests
+python -m unittest tests.test_v08
+
+# watch live
+python -m pytest -xvs 2>/dev/null || python -m unittest -v
+```
+
+All source modules are stdlib-only plus `requests`, so contributions stay easy
+to run.
+
+---
+
+## License
+
+MIT — see `LICENSE` (add if you have one).
