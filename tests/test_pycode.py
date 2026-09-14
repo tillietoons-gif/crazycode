@@ -105,11 +105,14 @@ class TestAgent(unittest.TestCase):
 
 class TestSchemas(unittest.TestCase):
     def test_schema_count(self):
-        self.assertEqual(len(TOOL_SCHEMAS), 8)
+        # 10 built-in tools: bash, read, write, edit, glob, grep,
+        # webfetch, web_search, view_image, todo
+        self.assertEqual(len(TOOL_SCHEMAS), 10)
 
     def test_schema_names(self):
         names = {s["function"]["name"] for s in TOOL_SCHEMAS}
-        self.assertEqual(names, {"bash", "read", "write", "edit", "glob", "grep", "webfetch", "todo"})
+        self.assertEqual(names, {"bash", "read", "write", "edit", "glob", "grep",
+                                 "webfetch", "web_search", "view_image", "todo"})
 
     def test_all_tools_registered(self):
         for s in TOOL_SCHEMAS:

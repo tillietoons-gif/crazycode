@@ -106,6 +106,12 @@ def main() -> None:
                         help="YOLO mode: skip all confirmations (dangerous)")
     parser.add_argument("--enable-subagents", action="store_true",
                         help="Expose the `task` subagent tool to the LLM")
+    parser.add_argument("--failover", metavar="FILE",
+                        help="Provider failover config JSON: {\"providers\": [{\"api_key\",\"api_base\",\"model\",\"name\"}],\"default\":0}")
+    parser.add_argument("--cost", action="store_true",
+                        help="Show token/cost accounting on every turn")
+    parser.add_argument("--no-cost", action="store_true",
+                        help="Disable cost accounting entirely")
 
     args = parser.parse_args()
 
@@ -168,6 +174,34 @@ def main() -> None:
         if not args.quiet:
             n_tools = len(registry.all_schemas())
             print(dim(f"  mcp: {len(registry.servers)} server(s), {n_tools} tool(s)"), file=sys.stderr)
+
+    # Attach multi-provider failover if a config file is given
+    if args.failover:
+        from pycode.failover import FailoverProvider, ProviderConfig
+        with open(args.failover, encoding="utf-8") as fh:
+            spec = json.load(fh)
+        provs = [
+            ProviderConfig(
+                api_key=p.get("api_key", ""),
+                api_base=p.get("api_base", ""),
+                model=p.get("model", "gpt-4o"),
+                name=p.get("name", ""),
+                temperature=p.get("temperature"),
+                max_tokens=p.get("max_tokens"),
+            )
+            for p in spec.get("providers", [])
+        ]
+        if not provs:
+            print(f"{c('yellow','warn:')} no providers in {args.failover}", file=sys.stderr)
+        else:
+            failover = FailoverProvider(provs, default=spec.get("default", 0))
+            agent.attach_failover(failover)
+            if not args.quiet:
+                print(dim(f"  failover: {len(provs)} provider(s): " + ", ".join(p.name for p in provs)), file=sys.stderr)
+
+    # Cost accounting toggle
+    if args.no_cost:
+        agent.cost_tracker = None  # type: ignore[assignment]
 
     if not cfg.get("api_key"):
         print("Warning: No API key found.", file=sys.stderr)
@@ -239,6 +273,9 @@ def main() -> None:
                 "    /resume [file]  load a saved session (latest if omitted)\n"
                 "    /sessions       list saved sessions\n"
                 "    /context        show context window usage\n"
+                "    /cost           show token/cost accounting for the session\n"
+                "    /rewind [n]     roll back to checkpoint n (list if omitted)\n"
+                "    /branch n instr branch from checkpoint n\n"
                 "    /new-context    generate CLAUDE.md project-instructions file\n"
                 "    /preset NAME    (show available provider presets)\n"
                 f"    quit / exit     stop\n\n"
@@ -323,6 +360,20 @@ def main() -> None:
                 for s in sessions[:10]:
                     print(f"  {s}", file=sys.stderr)
             continue
+        if user_input.startswith("/cost"):
+            rep = agent.cost_report()
+            if rep.get("disabled"):
+                print("  cost accounting disabled (--no-cost)", file=sys.stderr)
+            else:
+                print(
+                    f"  model: {rep['model']}\n"
+                    f"  session: {rep['session_tokens']['total_tokens']} tokens, "
+                    f"~${rep['session_cost_usd']:.4f} over {rep['turns']} turn(s)\n"
+                    f"  last turn: {rep['last_turn_tokens']['total_tokens']} tokens, "
+                    f"~${rep['last_turn_cost_usd']:.4f}",
+                    file=sys.stderr,
+                )
+            continue
 
         # Rewind commands
         if user_input.startswith("/rewind"):
@@ -362,6 +413,12 @@ def main() -> None:
 
         result = agent.run(user_input, interactive_review=args.dry_run and sys.stdin.isatty())
         print(result, "\n")
+
+        # Per-turn cost when enabled
+        if args.cost and agent.cost_tracker is not None:
+            rep = agent.cost_report()
+            print(dim(f"  [cost] last turn ~${rep['last_turn_cost_usd']:.4f} | "
+                      f"session ~${rep['session_cost_usd']:.4f}"), file=sys.stderr)
 
 
 if __name__ == "__main__":

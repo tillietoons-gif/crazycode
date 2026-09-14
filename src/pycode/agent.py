@@ -17,6 +17,8 @@ from pycode.permissions import PermissionGuard, make_permission_confirm
 from pycode.rewind import RewindManager
 from pycode.subagents import SubagentRegistry, task_tool_schema
 from pycode.tools import TOOL_SCHEMAS, dispatch_tool
+from pycode.cost import CostTracker
+from pycode.failover import FailoverProvider, ProviderConfig
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -96,6 +98,9 @@ class Agent:
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        # Multi-provider failover: a FailoverProvider can replace `self.provider`
+        # via attach_failover(). Both LLMProvider and FailoverProvider expose
+        # chat_stream() / chat() / model / api_base, so the loop is agnostic.
         self.max_iterations = max_iterations
         self.max_context_tokens = max_context_tokens
         self.verbose = verbose
@@ -113,6 +118,8 @@ class Agent:
         # Subagent dispatcher + rewind manager
         self.subagents = SubagentRegistry(self)
         self.rewinder = RewindManager()
+        # Token / cost accounting for the whole session
+        self.cost_tracker = CostTracker(model=self.provider.model)
 
         # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
         auto_ctx = load_context(self.project_root)
@@ -131,6 +138,21 @@ class Agent:
     def attach_mcp(self, registry) -> None:
         """Attach an MCPRegistry so external tool plugins are available."""
         self.mcp = registry
+
+    def attach_failover(self, failover: "FailoverProvider") -> None:
+        """Replace the single provider with a multi-provider failover chain.
+
+        After this, every LLM call tries the providers in order until one
+        succeeds. Cost is recorded against the provider that actually answered.
+        """
+        self.provider = failover
+        self.cost_tracker = CostTracker(model=failover.model)
+
+    def cost_report(self) -> Dict[str, Any]:
+        """Return the session token/cost summary for display."""
+        if self.cost_tracker is None:
+            return {"disabled": True}
+        return self.cost_tracker.summary()
 
     def _all_tool_schemas(self) -> List[Dict[str, Any]]:
         schemas = list(TOOL_SCHEMAS)
@@ -287,18 +309,27 @@ class Agent:
 
         Normalizes the result to a dict with 'content' and 'tool_calls' keys
         regardless of whether the provider returned a string or a dict.
+        Records token usage into the session CostTracker.
         """
         schemas = self._all_tool_schemas()
-        try:
-            result = self.provider.chat_stream(self.messages, schemas)
-        except Exception:
-            # Some providers (e.g. Venice) reject streaming; fall back
+        # Use a stable system-prompt prefix so providers with prompt caching
+        # can cache it; messages[0] is the system prompt (byte-stable).
+        result: Dict[str, Any]
+        if hasattr(self.provider, "chat_stream"):
+            try:
+                result = self.provider.chat_stream(self.messages, schemas)
+            except Exception:
+                # Some providers (e.g. Venice) reject streaming; fall back
+                result = self.provider.chat(self.messages, tools=schemas)
+        else:
             result = self.provider.chat(self.messages, tools=schemas)
 
-        # Normalize: chat() returns a plain string; chat_stream() returns a dict
-        if isinstance(result, dict):
-            return result
-        return {"content": result or "", "tool_calls": []}
+        # Record token usage for cost tracking
+        if isinstance(result, dict) and result.get("usage") and self.cost_tracker is not None:
+            self.cost_tracker.record(result.get("usage"))
+        elif isinstance(result, str):
+            result = {"content": result or "", "tool_calls": []}
+        return result
 
     def clear(self) -> None:
         """Reset conversation history, keeping the system prompt."""

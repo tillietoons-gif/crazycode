@@ -232,6 +232,80 @@ def tool_webfetch(url: str, timeout: int = 30) -> Dict[str, Any]:
     return _fetch_url(url, timeout=timeout)
 
 
+def tool_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
+    """Search the web for a query and return top result titles/URLs/snippets.
+
+    Uses DuckDuckGo's HTML endpoint (no API key required). Returns a list of
+    {title, url}. Fails gracefully if the network is unavailable.
+    """
+    import urllib.parse
+    import html as _html
+    import base64
+    import zlib
+    try:
+        url = "https://duckduckgo.com/html/?q=" + urllib.parse.quote(query)
+        req = urllib.request.Request(url, headers={"User-Agent": "pycode-agent/0.5"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+        results: List[Dict[str, str]] = []
+        for m in re.finditer(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', body, re.S):
+            href = m.group(1)
+            title = _html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
+            real_url = _decode_ddg_url(href) if "uddg=" in href else href
+            results.append({"title": title, "url": real_url or href})
+            if len(results) >= max_results:
+                break
+        return {"query": query, "results": results, "count": len(results)}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"web search failed: {exc}", "query": query, "results": []}
+
+
+def _decode_ddg_url(href: str) -> str:
+    """Decode DuckDuckGo's uddg redirect param to the real URL."""
+    import urllib.parse
+    import base64
+    import zlib
+    try:
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+        b64 = params.get("uddg", [""])[0]
+        if not b64:
+            return ""
+        padded = b64 + "=" * (-len(b64) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode())
+        if decoded[:1] == b"\x9c":
+            try:
+                decoded = zlib.decompress(decoded, -15)
+            except Exception:  # noqa: BLE001
+                decoded = decoded[1:]
+        return decoded.decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def tool_view_image(path: str) -> Dict[str, Any]:
+    """Read a local image file and return base64 + metadata for vision LLMs.
+
+    Returns {path, mime, b64, size_bytes} so the agent can include it in a
+    multimodal message. Errors if the file is missing or too large.
+    """
+    import base64
+    import mimetypes
+    MAX_BYTES = 10 * 1024 * 1024  # 10 MB cap
+    p = Path(path)
+    if not p.is_file():
+        return {"error": f"Image not found: {path}"}
+    data = p.read_bytes()
+    if len(data) > MAX_BYTES:
+        return {"error": f"Image too large ({len(data)} bytes; cap {MAX_BYTES})"}
+    mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    return {
+        "path": path,
+        "mime": mime,
+        "b64": base64.b64encode(data).decode(),
+        "size_bytes": len(data),
+    }
+
+
 def tool_todo(add: Optional[List[Dict[str, str]]] = None, clear: bool = False) -> Dict[str, Any]:
     """Manage a simple in-memory todo list shared across the session."""
     # Stored on the agent instance via the module-level dict
@@ -387,6 +461,35 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for a query. Returns top result titles, URLs, and snippets.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "max_results": {"type": "integer", "description": "Max results (default 5)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "view_image",
+            "description": "Read a local image file and return base64 + metadata for multimodal/vision LLMs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path to the image file"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 # Name -> callable map
@@ -398,6 +501,8 @@ TOOLS: Dict[str, Any] = {
     "glob": tool_glob,
     "grep": tool_grep,
     "webfetch": tool_webfetch,
+    "web_search": tool_web_search,
+    "view_image": tool_view_image,
     "todo": tool_todo,
 }
 
