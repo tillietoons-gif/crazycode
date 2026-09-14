@@ -18,6 +18,12 @@ from pycode.tui_markdown import print_markdown
 from pycode.tui_feed import ActivityFeed
 from pycode.tui_statusbar import update_status
 from pycode.tui_diff_review import InteractiveDiffReviewer
+from pycode.tui_session_picker import pick_session
+from pycode.tui_context_view import print_context
+from pycode.tui_inspector import inspector_report
+from pycode.tui_pager import paginate_or_print
+from pycode.session_export import export_to_html
+from pycode.onboarding import has_any_credential, onboarding_message, should_show_onboarding, mark_onboarded
 
 
 def _print_config(cfg: dict) -> None:
@@ -122,6 +128,10 @@ def main() -> None:
                              "- plain text output only")
     parser.add_argument("--no-tab-complete", action="store_true",
                         help="Disable slash-command tab completion")
+    parser.add_argument("--export-html", metavar="FILE",
+                        help="Export the session to a styled HTML file when done")
+    parser.add_argument("--force-onboard", action="store_true",
+                        help="Show the first-run onboarding even if a key is present")
 
     args = parser.parse_args()
     # Plain mode disables all fancy TUI enhancements
@@ -221,7 +231,13 @@ def main() -> None:
 
     if not cfg.get("api_key"):
         print("Warning: No API key found.", file=sys.stderr)
-        print("  Set PYCODE_API_KEY or --api-key, or use a preset with its env key.", file=sys.stderr)
+        # First-run onboarding: show copy-pasteable setup guidance once
+        if should_show_onboarding(force=args.force_onboard):
+            print(c("yellow", "  \U0001f680 first run - no LLM key detected"), file=sys.stderr)
+            print(onboarding_message(), file=sys.stderr)
+            mark_onboarded()
+        else:
+            print("  Set PYCODE_API_KEY or --api-key, or use a preset with its env key.", file=sys.stderr)
 
     print_banner()
     _print_config({k: v for k, v in cfg.items() if v})
@@ -293,11 +309,14 @@ def main() -> None:
             continue
         if user_input.startswith("/context"):
             usage = agent.context_usage()
-            print(
-                f"  context window: {usage['used']}/{usage['budget']} tokens "
-                f"({usage['pct']}%), {usage['messages']} messages",
-                file=sys.stderr,
-            )
+            if args.use_tui:
+                print_context(usage["used"], usage["budget"], usage["messages"], use_color=True)
+            else:
+                print(
+                    f"  context window: {usage['used']}/{usage['budget']} tokens "
+                    f"({usage['pct']}%), {usage['messages']} messages",
+                    file=sys.stderr,
+                )
             continue
         if user_input.startswith("/preset"):
             print("  presets: " + ", ".join(PRESETS), file=sys.stderr)
@@ -359,13 +378,25 @@ def main() -> None:
                 print(f"Error resuming: {e}", file=sys.stderr)
             continue
         if user_input.startswith("/sessions"):
-            from pycode.session import list_sessions
-            sessions = list_sessions(args.project_root)
-            if not sessions:
-                print("No saved sessions in .pycode-sessions/.", file=sys.stderr)
+            # interactive picker on a TTY, plain list otherwise
+            if args.use_tui and sys.stdin.isatty():
+                chosen = pick_session(args.project_root, tty=True)
+                if chosen:
+                    _resume_meta = None
+                    try:
+                        msgs = agent.restore_session(chosen.path)
+                        agent.messages = [agent.messages[0]] + msgs
+                        print(f"Resumed session: {chosen.short_name} ({len(msgs)} messages)", file=sys.stderr)
+                    except Exception as e:
+                        print(f"Error resuming {chosen.short_name}: {e}", file=sys.stderr)
             else:
-                for s in sessions[:10]:
-                    print(f"  {s}", file=sys.stderr)
+                from pycode.session import list_sessions
+                sessions = list_sessions(args.project_root)
+                if not sessions:
+                    print("No saved sessions in .pycode-sessions/.", file=sys.stderr)
+                else:
+                    for s in sessions[:10]:
+                        print(f"  {s}", file=sys.stderr)
             continue
         if user_input.startswith("/cost"):
             rep = agent.cost_report()
@@ -380,6 +411,19 @@ def main() -> None:
                     f"~${rep['last_turn_cost_usd']:.4f}",
                     file=sys.stderr,
                 )
+            continue
+        if user_input.startswith("/config") or user_input.startswith("/inspect"):
+            print(inspector_report(agent), file=sys.stderr)
+            continue
+        if user_input.startswith("/export"):
+            parts = user_input.split(None, 1)
+            default_name = "pycode-session.html"
+            target = parts[1].strip() if len(parts) > 1 and parts[1].strip() else default_name
+            try:
+                path = export_to_html(agent.messages, target, title="pycode session")
+                print(f"Exported session to {path} ({len(agent.messages)} messages)", file=sys.stderr)
+            except Exception as e:
+                print(f"Error exporting session: {e}", file=sys.stderr)
             continue
 
         # Rewind commands

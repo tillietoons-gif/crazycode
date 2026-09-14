@@ -16,6 +16,7 @@ from pycode.session import save_session, load_session, latest_session
 from pycode.permissions import PermissionGuard, make_permission_confirm
 from pycode.rewind import RewindManager
 from pycode.subagents import SubagentRegistry, task_tool_schema
+from pycode.tui_subagent_trace import SubagentTrace
 from pycode.tools import TOOL_SCHEMAS, dispatch_tool
 from pycode.cost import CostTracker
 from pycode.failover import FailoverProvider, ProviderConfig
@@ -123,6 +124,9 @@ class Agent:
         # Activity feed: append-only log of every tool call for the TUI
         from pycode.tui_feed import ActivityFeed
         self.feed = ActivityFeed(use_color=False)
+        # Nested subagent traces for the TUI (one SubagentTrace per task call)
+        from pycode.tui_subagent_trace import SubagentTrace
+        self.subagent_traces: List[SubagentTrace] = []
 
         # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
         auto_ctx = load_context(self.project_root)
@@ -245,12 +249,21 @@ class Agent:
 
                 # Route the `task` subagent tool to the subagent registry
                 if fn_name == "task":
+                    trace = SubagentTrace(name=args.get("task", "")[:20] or "task")
+                    trace.start(args.get("task", ""))
                     result = self.subagents.run_task(
                         task=args.get("task", ""),
                         system_prompt=args.get("system_prompt"),
                         tools=args.get("tools"),
                         model=args.get("model"),
                     )
+                    # parse the subagent summary for the trace end line
+                    try:
+                        summary = json.loads(result).get("result", result)
+                    except (json.JSONDecodeError, AttributeError):
+                        summary = result
+                    trace.end(str(summary)[:80])
+                    self.subagent_traces.append(trace)
                     self.feed.end(tc_id, "task", args, result, ok=True, mcp=False)
                     self.messages.append({
                         "role": "tool",
@@ -413,6 +426,12 @@ class Agent:
     def context_usage(self) -> Dict[str, int]:
         """Return token-usage stats for the current conversation."""
         return context_stats(self.messages, self.max_context_tokens)
+
+    def subagent_trace_report(self) -> str:
+        """Render all captured subagent traces (for the TUI /dump-subagents)."""
+        if not self.subagent_traces:
+            return ""
+        return "\n\n".join(t.render(use_color=True) for t in self.subagent_traces)
 
     # ------------------------------------------------------------------
     # Rewind / branching
