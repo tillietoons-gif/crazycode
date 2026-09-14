@@ -151,8 +151,10 @@ def print_assistant(content: str) -> None:
 
 
 def print_banner() -> None:
+    from pycode import __version__
     print("=" * 56, file=sys.stderr, flush=True)
-    print(bold(c("cyan", "  pycode - Python AI Coding Agent")), file=sys.stderr, flush=True)
+    print(bold(c("cyan", f"  pycode v{__version__} - Python AI Coding Agent")),
+          file=sys.stderr, flush=True)
     print("=" * 56, file=sys.stderr, flush=True)
     print(
         "  quit/exit to stop, :clear to reset, /resume to load session\n"

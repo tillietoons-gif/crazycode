@@ -9,12 +9,14 @@ docs — using a tool-calling loop against any OpenAI-compatible LLM (OpenAI,
 Anthropic, Ollama, Venice, OpenRouter, and more).
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  pycode · v0.8.0                                                 │
-│                                                                  │
-│  10 tools · 5 provider presets · MCP plugins · subagents        │
-│  session rewind · cost accounting · 157 passing tests            │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  pycode · v1.0.0                                                     │
+│                                                                      │
+│  15 tools · 5 provider presets · MCP plugins · subagents             │
+│  project symbol map · background jobs · hooks · themes               │
+│  SSE streaming · Esc-to-abort · self-review · auto-fix loop          │
+│  274 passing tests                                                   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -25,7 +27,7 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 - **Tool-calling loop** — the LLM plans a step, calls a tool, observes the
   result, and repeats until the task is done (up to a configurable iteration
   cap).
-- **14 built-in tools** — `bash`, `read`, `write`, `edit`, `glob`, `grep`,
+- **15 built-in tools** — `bash`, `read`, `write`, `edit`, `glob`, `grep`,
   `webfetch`, `web_search`, `view_image`, `todo`, plus background jobs
   (`bash_background`, `job_output`, `job_list`, `job_kill`) and `symbols`.
 - **Real SSE token streaming** with live output; any streaming failure falls
@@ -283,6 +285,12 @@ Context / limits
   --context-budget N  Context token budget (default 60000)
   --max-iterations N  Max tool-loop iterations (default 30)
   --project-root PATH
+  --no-map            Disable the project symbol map
+
+Autonomy
+  --agent-loop GOAL   Auto-fix loop toward GOAL, then exit
+  --loop-max N        Max loop attempts (default 5)
+  --self-review       Reviewer call after edits; may request one revision
 
 Extensibility
   --mcp FILE        MCP server config (repeatable)
@@ -302,6 +310,7 @@ Cost / TUI
 
 Output
   --quiet, --non-interactive
+  --force-onboard     Show first-run onboarding even with a key present
 ```
 
 ### In-REPL commands
@@ -360,7 +369,8 @@ src/pycode/
   tui*.py             terminal UI (markdown, status bar, feed, reviewer,
                        picker, context view, subagent trace, inspector, pager)
   tui_theme.py        named color themes
-tests/                unittest suite (260 tests across 12 modules)
+tests/                unittest suite (274 tests across 13 modules)
+docs/                 roadmap spec + release checklist
 .env.example          copy-pasteable configuration template
 .pycode/              project-level config, policies & auto-saved sessions
 ```
