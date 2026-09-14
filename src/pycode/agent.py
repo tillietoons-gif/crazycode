@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from pycode.provider import LLMProvider
+from pycode.provider import LLMProvider, accepts_kwarg
 from pycode.providers import get_preset, detect_preset, PRESETS
 from pycode.context import find_context_files, load_context
 from pycode.context_manager import trim_messages, conversation_tokens, context_stats
@@ -20,6 +21,7 @@ from pycode.tui_subagent_trace import SubagentTrace
 from pycode.tools import TOOL_SCHEMAS, dispatch_tool
 from pycode.cost import CostTracker
 from pycode.failover import FailoverProvider, ProviderConfig
+from pycode.hooks import hook_context
 from pycode import interrupts
 
 # ---------------------------------------------------------------------------
@@ -128,6 +130,10 @@ class Agent:
         # Nested subagent traces for the TUI (one SubagentTrace per task call)
         from pycode.tui_subagent_trace import SubagentTrace
         self.subagent_traces: List[SubagentTrace] = []
+        # Lifecycle hooks (pre_tool/post_tool/on_turn), attached by the CLI
+        self.hooks = None
+        # Set while the LLM is streaming live deltas (suppresses duplicate print)
+        self._streamed = False
 
         # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
         auto_ctx = load_context(self.project_root)
@@ -146,6 +152,17 @@ class Agent:
     def attach_mcp(self, registry) -> None:
         """Attach an MCPRegistry so external tool plugins are available."""
         self.mcp = registry
+
+    def attach_hooks(self, hooks) -> None:
+        """Attach a HookRunner for pre_tool/post_tool/on_turn shell hooks."""
+        self.hooks = hooks
+
+    def _emit_hook(self, event: str, context: Optional[Dict[str, Any]] = None) -> None:
+        if self.hooks is not None:
+            try:
+                self.hooks.emit(event, context)
+            except Exception:  # noqa: BLE001 - hooks must never kill the agent
+                pass
 
     def attach_failover(self, failover: "FailoverProvider") -> None:
         """Replace the single provider with a multi-provider failover chain.
@@ -191,6 +208,7 @@ class Agent:
 
         # Record a checkpoint at this user turn so the agent can rewind to it
         self.checkpoint(label=" ".join(user_input.split())[:40])
+        self._emit_hook("on_turn", {"goal": user_input[:200]})
 
         # Trim conversation to fit within the context budget before the LLM call
         if len(self.messages) > 2:
@@ -221,7 +239,10 @@ class Agent:
 
             if content and self.verbose:
                 from pycode.tui import print_assistant
-                print_assistant(content)
+                if self._streamed:
+                    print()  # finish the streamed line instead of re-printing
+                else:
+                    print_assistant(content)
 
             assistant_msg: Dict[str, Any] = {"role": "assistant"}
             if content:
@@ -258,6 +279,7 @@ class Agent:
 
                 # Route the `task` subagent tool to the subagent registry
                 if fn_name == "task":
+                    self._emit_hook("pre_tool", hook_context("task", args))
                     trace = SubagentTrace(name=args.get("task", "")[:20] or "task")
                     trace.start(args.get("task", ""))
                     result = self.subagents.run_task(
@@ -273,6 +295,7 @@ class Agent:
                         summary = result
                     trace.end(str(summary)[:80])
                     self.subagent_traces.append(trace)
+                    self._emit_hook("post_tool", hook_context("task", args, ok=True))
                     self.feed.end(tc_id, "task", args, result, ok=True, mcp=False)
                     self.messages.append({
                         "role": "tool",
@@ -282,6 +305,7 @@ class Agent:
                     continue
 
                 self.feed.begin(tc_id, fn_name, args)
+                self._emit_hook("pre_tool", hook_context(fn_name, args))
                 result = dispatch_tool(
                     fn_name,
                     args,
@@ -322,6 +346,7 @@ class Agent:
                         pass
 
                 ok = not (result.startswith('{"error"') or '"ok": false' in result)
+                self._emit_hook("post_tool", hook_context(fn_name, args, ok=ok))
                 self.feed.end(tc_id, fn_name, args, result, ok=ok, mcp=False)
 
                 if self.verbose:
@@ -336,20 +361,78 @@ class Agent:
 
         return "[max iterations reached]"
 
+    # ------------------------------------------------------------------
+    # Plan mode: plan-then-execute
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_plan(raw: str) -> List[str]:
+        """Extract numbered steps from an LLM plan response."""
+        steps: List[str] = []
+        for line in raw.splitlines():
+            m = re.match(r"^\s*\d+[.)\]]\s+(.*)", line)
+            if m and m.group(1).strip():
+                steps.append(m.group(1).strip())
+        return steps
+
+    def draft_plan(self, goal: str, max_steps: int = 10) -> List[str]:
+        """Ask the LLM for a numbered step plan for ``goal`` (no tools run)."""
+        plan_prompt = (
+            f"Goal: {goal}\n\n"
+            f"Write a numbered step-by-step plan to accomplish this goal. "
+            f"At most {max_steps} steps. Each step must be one concrete, "
+            f"self-contained instruction. Return ONLY the numbered list."
+        )
+        raw = self.provider.chat(
+            [self.messages[0], {"role": "user", "content": plan_prompt}],
+            tools=None,
+        )
+        return self._parse_plan(raw)[:max_steps]
+
+    def run_plan(self, goal: str, max_steps: int = 10) -> Dict[str, Any]:
+        """Plan-then-execute: draft a plan, then run each step as its own
+        checkpointed turn. Returns a summary dict for the CLI to render."""
+        try:
+            steps = self.draft_plan(goal, max_steps=max_steps)
+        except Exception as exc:  # noqa: BLE001
+            return {"goal": goal, "error": f"plan draft failed: {exc}", "results": []}
+        if not steps:
+            return {"goal": goal, "error": "no plan steps parsed", "results": []}
+        results: List[Dict[str, Any]] = []
+        total = len(steps)
+        for i, step in enumerate(steps, 1):
+            try:
+                interrupts.check_abort()
+            except interrupts.Aborted:
+                break
+            self.checkpoint(label=f"plan {i}: {step[:30]}")
+            result = self.run(f"[plan step {i}/{total}] {step}")
+            results.append({"step": step, "result": result})
+        return {"goal": goal, "steps": steps, "results": results}
+
     def _call_llm(self) -> Dict[str, Any]:
         """Call the LLM provider, falling back to non-streaming if needed.
 
         Normalizes the result to a dict with 'content' and 'tool_calls' keys
         regardless of whether the provider returned a string or a dict.
-        Records token usage into the session CostTracker.
+        Records token usage into the session CostTracker. When verbose on a
+        TTY, content deltas are printed live as they stream in.
         """
         schemas = self._all_tool_schemas()
         # Use a stable system-prompt prefix so providers with prompt caching
         # can cache it; messages[0] is the system prompt (byte-stable).
         result: Dict[str, Any]
+        self._streamed = False
+        live = self.verbose and sys.stdout.isatty()
         if hasattr(self.provider, "chat_stream"):
             try:
-                result = self.provider.chat_stream(self.messages, schemas)
+                if accepts_kwarg(self.provider.chat_stream, "on_delta"):
+                    result = self.provider.chat_stream(
+                        self.messages, schemas,
+                        on_delta=self._on_stream_delta if live else None,
+                    )
+                else:
+                    result = self.provider.chat_stream(self.messages, schemas)
             except Exception:
                 # Some providers (e.g. Venice) reject streaming; fall back
                 result = self.provider.chat(self.messages, tools=schemas)
@@ -362,6 +445,14 @@ class Agent:
         elif isinstance(result, str):
             result = {"content": result or "", "tool_calls": []}
         return result
+
+    def _on_stream_delta(self, text: str) -> None:
+        """Print a streamed content delta to stdout (TUI live output)."""
+        if not self._streamed:
+            self._streamed = True
+            print()
+        sys.stdout.write(text)
+        sys.stdout.flush()
 
     def clear(self) -> None:
         """Reset conversation history, keeping the system prompt."""

@@ -228,6 +228,15 @@ def main() -> None:
     if not args.auto_approve and not args.yolo and not args.non_interactive and sys.stdin.isatty():
         agent.set_confirm(_confirm_prompt)
 
+    # Lifecycle hooks from the config file's [hooks] section
+    from pycode.hooks import HookRunner
+    hook_runner = HookRunner.from_config(file_cfg)
+    if hook_runner.enabled:
+        agent.attach_hooks(hook_runner)
+        if not args.quiet:
+            n_hooks = sum(len(v) for v in hook_runner.commands.values())
+            print(dim(f"  hooks: {n_hooks} registered"), file=sys.stderr)
+
     # Load a custom permissions policy if requested
     if args.permissions:
         from pycode.permissions import PermissionGuard, make_permission_confirm
@@ -374,6 +383,35 @@ def main() -> None:
                     f"({usage['pct']}%), {usage['messages']} messages",
                     file=sys.stderr,
                 )
+            continue
+        if user_input.startswith("/plan"):
+            parts = user_input.split(None, 1)
+            goal = parts[1].strip() if len(parts) > 1 else ""
+            if not goal:
+                print("usage: /plan <goal>", file=sys.stderr)
+                continue
+            print(dim(f"  planning: {goal}"), file=sys.stderr)
+            controller = interrupts.new_controller()
+            try:
+                if args.use_tui and interrupts.supports_esc():
+                    with interrupts.EscListener(controller):
+                        summary = agent.run_plan(goal)
+                else:
+                    summary = agent.run_plan(goal)
+            except interrupts.Aborted:
+                summary = {"goal": goal, "error": "aborted by user", "results": []}
+            finally:
+                interrupts.clear_current()
+            if summary.get("error"):
+                print(f"  {c('red','error:')} {summary['error']}", file=sys.stderr)
+            total = len(summary.get("results", []))
+            print(dim(f"  executed {total}/{len(summary.get('steps', []))} step(s)"), file=sys.stderr)
+            for i, r in enumerate(summary.get("results", []), 1):
+                print(bold(f"  step {i}: {r['step']}"), file=sys.stderr)
+                if args.use_tui:
+                    print_markdown(r["result"], use_color=True)
+                else:
+                    print(r["result"], "\n")
             continue
         if user_input.startswith("/preset"):
             print("  presets: " + ", ".join(PRESETS), file=sys.stderr)

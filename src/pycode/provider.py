@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import sys
@@ -12,6 +13,18 @@ import requests
 
 class LLMProviderError(Exception):
     """Raised when the LLM API request fails."""
+
+
+def accepts_kwarg(fn: Any, name: str) -> bool:
+    """True if ``fn``'s signature has a parameter named ``name``.
+
+    Used to stay compatible with duck-typed providers/fakes that may not
+    accept newer keyword arguments.
+    """
+    try:
+        return name in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 class LLMProvider:
@@ -37,14 +50,110 @@ class LLMProvider:
         self,
         messages: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]] = None,
+        on_delta: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Send a chat completion request with tool support.
+
+        Tries real SSE streaming first (so tokens appear live and Esc can
+        abort between chunks); any streaming failure falls back to a single
+        non-streaming POST. ``on_delta`` (if given) is called with each
+        content string as it arrives.
 
         Returns a dict with:
           - content: str
           - tool_calls: list of {id, type, function: {name, arguments}}
           - usage: raw token usage dict (prompt/completion/cached)
         """
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        url = f"{self.api_base}/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        try:
+            with requests.post(url, headers=headers, json=payload, timeout=120, stream=True) as resp:
+                if resp.status_code >= 400:
+                    raise LLMProviderError(f"LLM API {resp.status_code}: {resp.text[:400]}")
+                content, tool_calls, usage = self._consume_sse(resp, on_delta)
+                # An empty stream means the server ignored stream=True and
+                # answered with a plain JSON body - retry without streaming.
+                if not content and not tool_calls and usage is None:
+                    return self._chat_nonstream(messages, tools)
+                self.last_usage = usage or {}
+                return {"content": content, "tool_calls": tool_calls, "usage": self.last_usage}
+        except LLMProviderError:
+            raise
+        except Exception:  # noqa: BLE001 - stream failed; fall back below
+            return self._chat_nonstream(messages, tools)
+
+    def _consume_sse(self, resp: Any, on_delta: Optional[Any] = None):
+        """Parse an OpenAI-style SSE body into (content, tool_calls, usage)."""
+        content_parts: List[str] = []
+        slots: Dict[int, Dict[str, str]] = {}
+        usage: Optional[Dict[str, Any]] = None
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if isinstance(raw_line, bytes):
+                raw_line = raw_line.decode("utf-8", errors="replace")
+            line = raw_line.strip()
+            if not line or line.startswith(":"):
+                continue
+            if not line.startswith("data:"):
+                continue
+            data = line[len("data:"):].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if chunk.get("usage"):
+                usage = chunk["usage"]
+            choices = chunk.get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
+            piece = delta.get("content")
+            if piece:
+                content_parts.append(piece)
+                if on_delta is not None:
+                    try:
+                        on_delta(piece)
+                    except Exception:  # noqa: BLE001
+                        pass
+            for tc in delta.get("tool_calls") or []:
+                idx = tc.get("index", 0)
+                slot = slots.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                fn = tc.get("function") or {}
+                slot["id"] = tc.get("id") or slot["id"]
+                slot["name"] += fn.get("name") or ""
+                slot["arguments"] += fn.get("arguments") or ""
+        tool_calls = [
+            {
+                "id": slots[i]["id"] or f"call_{i}",
+                "type": "function",
+                "function": {"name": slots[i]["name"], "arguments": slots[i]["arguments"] or "{}"},
+            }
+            for i in sorted(slots)
+        ]
+        return "".join(content_parts), tool_calls, usage
+
+    def _chat_nonstream(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Single-shot request (the original pre-streaming path)."""
         payload: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,

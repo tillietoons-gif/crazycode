@@ -103,6 +103,42 @@ def tool_bash(command: str, workdir: Optional[str] = None, timeout: Optional[int
     return _run_cmd(command, workdir=workdir, timeout=timeout)
 
 
+# ---------------------------------------------------------------------------
+# Background job tools
+# ---------------------------------------------------------------------------
+
+_JOB_MANAGER = None
+
+
+def get_job_manager() -> Any:
+    """Lazily-created shared JobManager for background shell jobs."""
+    global _JOB_MANAGER
+    if _JOB_MANAGER is None:
+        from pycode.jobs import JobManager
+        _JOB_MANAGER = JobManager()
+    return _JOB_MANAGER
+
+
+def tool_bash_background(command: str, workdir: Optional[str] = None) -> Dict[str, Any]:
+    """Start a shell command in the background and return a job id."""
+    return get_job_manager().start(command, workdir=workdir)
+
+
+def tool_job_output(job_id: str, tail: int = 60) -> Dict[str, Any]:
+    """Return a background job's status and last lines of output."""
+    return get_job_manager().output(job_id, tail=tail)
+
+
+def tool_job_list() -> Dict[str, Any]:
+    """List background jobs started this session."""
+    return {"jobs": get_job_manager().list()}
+
+
+def tool_job_kill(job_id: str) -> Dict[str, Any]:
+    """Kill a background job (and its child processes)."""
+    return get_job_manager().kill(job_id)
+
+
 def tool_read(path: str, offset: int = 1, limit: int = _MAX_READ_LINES) -> str:
     """Read a file (max 200 lines per call, 1-indexed offset)."""
     try:
@@ -490,6 +526,59 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "bash_background",
+            "description": "Start a shell command in the background (dev servers, long builds, installs) "
+                           "and keep working. Returns a job_id to poll with job_output.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The shell command to run in the background"},
+                    "workdir": {"type": "string", "description": "Optional working directory"},
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "job_output",
+            "description": "Check a background job: status plus its last output lines.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "Job id returned by bash_background"},
+                    "tail": {"type": "integer", "description": "Last N lines to return (default 60)"},
+                },
+                "required": ["job_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "job_list",
+            "description": "List all background jobs started this session with their status.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "job_kill",
+            "description": "Kill a running background job by id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "Job id returned by bash_background"},
+                },
+                "required": ["job_id"],
+            },
+        },
+    },
 ]
 
 # Name -> callable map
@@ -504,6 +593,10 @@ TOOLS: Dict[str, Any] = {
     "web_search": tool_web_search,
     "view_image": tool_view_image,
     "todo": tool_todo,
+    "bash_background": tool_bash_background,
+    "job_output": tool_job_output,
+    "job_list": tool_job_list,
+    "job_kill": tool_job_kill,
 }
 
 
@@ -525,7 +618,7 @@ def is_destructive(name: str, args: Dict[str, Any]) -> bool:
     """Heuristic: does this tool call mutate state destructively?"""
     if name in _DESTRUCTIVE_TOOLS:
         return True
-    if name == "bash":
+    if name in ("bash", "bash_background"):
         cmd = args.get("command", "")
         if _DESTRUCTIVE_CMD_RE.search(cmd):
             return True

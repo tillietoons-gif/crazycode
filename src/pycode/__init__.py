@@ -1,6 +1,6 @@
 """pycode - Python AI Coding Agent (Claude Code alternative)."""
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 from pycode.agent import Agent
 from pycode.cli import main
@@ -10,7 +10,9 @@ from pycode.context_manager import trim_messages, conversation_tokens, context_s
 from pycode.cost import CostTracker, TokenUsage, pricing_for
 from pycode.diff_reviewer import DiffReviewer, render_diff, review_single
 from pycode.failover import FailoverProvider, ProviderConfig
+from pycode.hooks import HookRunner, hook_context
 from pycode.interrupts import Aborted, AbortController, EscListener, check_abort, new_controller
+from pycode.jobs import JobManager
 from pycode.mcp import MCPRegistry, MCPServer
 from pycode.onboarding import has_any_credential, onboarding_message
 from pycode.permissions import PermissionGuard, make_permission_confirm
@@ -40,6 +42,7 @@ __all__ = [
     "load_config", "parse_toml", "find_config_files", "project_config_path",
     "Aborted", "AbortController", "EscListener", "check_abort", "new_controller",
     "apply_theme", "available_themes", "resolve_theme", "THEMES",
+    "JobManager", "HookRunner", "hook_context",
     "load_context", "find_context_files",
     "trim_messages", "conversation_tokens", "context_stats",
     "CostTracker", "TokenUsage", "pricing_for",

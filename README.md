@@ -25,8 +25,17 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 - **Tool-calling loop** — the LLM plans a step, calls a tool, observes the
   result, and repeats until the task is done (up to a configurable iteration
   cap).
-- **10 built-in tools** — `bash`, `read`, `write`, `edit`, `glob`, `grep`,
-  `webfetch`, `web_search`, `view_image`, `todo`.
+- **14 built-in tools** — `bash`, `read`, `write`, `edit`, `glob`, `grep`,
+  `webfetch`, `web_search`, `view_image`, `todo`, plus background jobs:
+  `bash_background`, `job_output`, `job_list`, `job_kill`.
+- **Real SSE token streaming** with live output; any streaming failure falls
+  back to a single request automatically.
+- **Plan mode** — `/plan <goal>` drafts a numbered plan, then executes each
+  step as its own checkpointed turn.
+- **Background jobs** — run dev servers, long builds, or installers without
+  blocking the loop; the LLM polls output and can kill jobs.
+- **Hooks** — shell commands on `pre_tool` / `post_tool` / `on_turn` events
+  (e.g. run your formatter after every edit). Failures are never fatal.
 - **Persistent conversation** with checkpointed history.
 
 ### Multi-provider
@@ -69,7 +78,6 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 - **Activity feed** with ✓/✗/→ glyphs and expandable detail.
 - **Slash-command tab-completion**, aliases, and a `/help` listing.
 - **Color themes** (`default`, `mono`, `dracula`, `nord`, `solarized`).
-- **Esc-to-abort** — press Escape during a turn to stop it cleanly.
 
 ---
 
@@ -146,6 +154,20 @@ max_tokens = 4096
 
 Pass `--no-config` to ignore both files, or `--theme <name>` to override the
 theme for a single run.
+
+### Hooks
+
+Declare shell commands in the `[hooks]` section; they fire on agent lifecycle
+events with a 30s timeout. Failures are logged, never fatal. Placeholders:
+`{tool}`, `{path}`, `{args_json}`, `{ok}`.
+
+```toml
+[hooks]
+post_tool = "black --quiet {path}"   # format after every tool call
+on_turn   = "echo turn done"
+```
+
+Events: `pre_tool`, `post_tool`, `on_turn`.
 
 ---
 
@@ -241,6 +263,7 @@ Output
 | `/export [file]` | Export the session to styled HTML |
 | `/preset` | List provider presets |
 | `/theme [name]` | Show or switch the color theme |
+| `/plan <goal>` | Draft a numbered plan, then execute each step |
 | `help` / `?` | Full command list + aliases |
 | `quit` / `exit` / `:q` | Stop |
 
@@ -257,7 +280,9 @@ src/pycode/
   failover.py         multi-provider failover chain
   config.py           layered TOML config (user + project)
   interrupts.py       Esc-to-abort controller + listener
-  tools.py            the 10 tools + dispatch + destructive detection
+  jobs.py             background job manager (bash_background / job_*)
+  hooks.py            pre_tool / post_tool / on_turn shell hooks
+  tools.py            the 14 tools + dispatch + destructive detection
   permissions.py      .pycode/permissions.toml policy engine
   subagents.py        task-tool subagent dispatch
   rewind.py           checkpoint / branch manager
@@ -272,7 +297,7 @@ src/pycode/
   tui*.py             terminal UI (markdown, status bar, feed, reviewer,
                        picker, context view, subagent trace, inspector, pager)
   tui_theme.py        named color themes
-tests/                unittest suite (185 tests across 9 modules)
+tests/                unittest suite (219 tests across 10 modules)
 .env.example          copy-pasteable configuration template
 .pycode/              project-level config, policies & auto-saved sessions
 ```

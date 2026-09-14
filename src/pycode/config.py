@@ -45,6 +45,7 @@ _KNOWN_KEYS = {
     "theme", "auto_approve", "quiet", "plain", "cost",
     "context_budget", "max_iterations",
     "model", "api_base", "temperature", "max_tokens",
+    "hooks",
 }
 
 _SECTIONS = {"provider", "ui", "llm"}
@@ -167,10 +168,15 @@ def _load_file(path: str) -> Dict[str, Any]:
 
 
 def _flatten(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Flatten known sections and keep only recognized top-level keys."""
+    """Flatten known sections and keep only recognized top-level keys.
+
+    The ``hooks`` section is kept as a raw dict (handled by hooks.py).
+    """
     flat: Dict[str, Any] = {}
     for key, value in raw.items():
-        if key in _SECTIONS and isinstance(value, dict):
+        if key == "hooks" and isinstance(value, dict):
+            flat[key] = value
+        elif key in _SECTIONS and isinstance(value, dict):
             for sub_key, sub_val in value.items():
                 if sub_key in _KNOWN_KEYS:
                     flat[sub_key] = sub_val

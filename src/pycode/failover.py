@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pycode.provider import LLMProvider, LLMProviderError
+from pycode.provider import LLMProvider, LLMProviderError, accepts_kwarg
 from pycode.cost import pricing_for
 
 
@@ -76,11 +76,12 @@ class FailoverProvider:
         messages: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]] = None,
         usage_sink: Optional[Any] = None,
+        on_delta: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Call providers in order starting from last_good; return first success.
 
         If usage_sink is a CostTracker, record usage on the provider that
-        actually succeeded.
+        actually succeeded. ``on_delta`` is forwarded for live streaming.
         """
         n = len(self.providers)
         order = [self.last_good] + [(self.last_good + 1 + i) % n for i in range(n - 1)]
@@ -88,7 +89,10 @@ class FailoverProvider:
         for idx in order:
             p = self.providers[idx]
             try:
-                resp = p.provider.chat_stream(messages, tools)
+                if accepts_kwarg(p.provider.chat_stream, "on_delta"):
+                    resp = p.provider.chat_stream(messages, tools, on_delta=on_delta)
+                else:
+                    resp = p.provider.chat_stream(messages, tools)
                 if usage_sink is not None:
                     self._record_usage(usage_sink, p, resp)
                 self.last_good = idx

@@ -24,6 +24,7 @@ COMMANDS: Dict[str, str] = {
     "/context": "show context window usage",
     "/help": "list commands",
     "/new-context": "generate CLAUDE.md project-instructions file",
+    "/plan": "plan-then-execute: draft steps for a goal and run each",
     "/preset": "show available provider presets",
     "/rewind": "roll back to a checkpoint (or list them)",
     "/branch": "branch from a checkpoint with new instruction",
