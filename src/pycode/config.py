@@ -43,7 +43,7 @@ PROJECT_CONFIG_REL = os.path.join(".pycode", "config.toml")
 
 _KNOWN_KEYS = {
     "theme", "auto_approve", "quiet", "plain", "cost", "no_map",
-    "context_budget", "max_iterations",
+    "context_budget", "max_iterations", "self_review", "loop_max",
     "model", "api_base", "temperature", "max_tokens",
     "hooks",
 }

@@ -87,6 +87,15 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 - **Smart `read`** — `symbol=NAME` reads around a definition instead of
   offset/limit line-hunting.
 
+### Model quality
+- **Thinking models** — `reasoning_content` deltas are parsed from the stream
+  and summarized as a dim one-liner; the reasoning is returned in the result.
+- **Self-review pass** (`--self-review`) — after edits apply, a reviewer call
+  checks the git diff and may request exactly one corrective revision.
+- **Auto-fix loop** (`--agent-loop "goal"` / `/loop goal`) — plan → do → test
+  → fix cycle up to `--loop-max` attempts (default 5). Because you launched
+  it explicitly, it may edit files unattended per your permissions policy.
+
 ### Terminal UX
 - **ANSI markdown + code highlighter** (python/js/ts/go/rust/bash/json/sql).
 - **Live status bar** for context, cost, and model.
@@ -313,6 +322,7 @@ Output
 | `/preset` | List provider presets |
 | `/theme [name]` | Show or switch the color theme |
 | `/plan <goal>` | Draft a numbered plan, then execute each step |
+| `/loop <goal>` | Auto-fix loop toward a goal (up to --loop-max attempts) |
 | `/map` | Show the project symbol map |
 | `/symbols <name>` | Look up symbols in the project index |
 | `help` / `?` | Full command list + aliases |

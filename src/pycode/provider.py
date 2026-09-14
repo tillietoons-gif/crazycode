@@ -51,18 +51,21 @@ class LLMProvider:
         messages: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]] = None,
         on_delta: Optional[Any] = None,
+        on_reasoning: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Send a chat completion request with tool support.
 
         Tries real SSE streaming first (so tokens appear live and Esc can
         abort between chunks); any streaming failure falls back to a single
         non-streaming POST. ``on_delta`` (if given) is called with each
-        content string as it arrives.
+        content string as it arrives; ``on_reasoning`` with each
+        reasoning/thinking string from reasoning models.
 
         Returns a dict with:
           - content: str
           - tool_calls: list of {id, type, function: {name, arguments}}
           - usage: raw token usage dict (prompt/completion/cached)
+          - reasoning: accumulated reasoning_content ("" if none)
         """
         payload: Dict[str, Any] = {
             "model": self.model,
@@ -85,21 +88,24 @@ class LLMProvider:
             with requests.post(url, headers=headers, json=payload, timeout=120, stream=True) as resp:
                 if resp.status_code >= 400:
                     raise LLMProviderError(f"LLM API {resp.status_code}: {resp.text[:400]}")
-                content, tool_calls, usage = self._consume_sse(resp, on_delta)
+                content, tool_calls, usage, reasoning = self._consume_sse(resp, on_delta, on_reasoning)
                 # An empty stream means the server ignored stream=True and
                 # answered with a plain JSON body - retry without streaming.
                 if not content and not tool_calls and usage is None:
                     return self._chat_nonstream(messages, tools)
                 self.last_usage = usage or {}
-                return {"content": content, "tool_calls": tool_calls, "usage": self.last_usage}
+                return {"content": content, "tool_calls": tool_calls,
+                        "usage": self.last_usage, "reasoning": reasoning}
         except LLMProviderError:
             raise
         except Exception:  # noqa: BLE001 - stream failed; fall back below
             return self._chat_nonstream(messages, tools)
 
-    def _consume_sse(self, resp: Any, on_delta: Optional[Any] = None):
-        """Parse an OpenAI-style SSE body into (content, tool_calls, usage)."""
+    def _consume_sse(self, resp: Any, on_delta: Optional[Any] = None,
+                     on_reasoning: Optional[Any] = None):
+        """Parse an OpenAI-style SSE body into (content, tool_calls, usage, reasoning)."""
         content_parts: List[str] = []
+        reasoning_parts: List[str] = []
         slots: Dict[int, Dict[str, str]] = {}
         usage: Optional[Dict[str, Any]] = None
         for raw_line in resp.iter_lines(decode_unicode=True):
@@ -138,6 +144,14 @@ class LLMProvider:
                 slot["id"] = tc.get("id") or slot["id"]
                 slot["name"] += fn.get("name") or ""
                 slot["arguments"] += fn.get("arguments") or ""
+            think = delta.get("reasoning_content") or delta.get("reasoning")
+            if think:
+                reasoning_parts.append(think)
+                if on_reasoning is not None:
+                    try:
+                        on_reasoning(think)
+                    except Exception:  # noqa: BLE001
+                        pass
         tool_calls = [
             {
                 "id": slots[i]["id"] or f"call_{i}",
@@ -146,7 +160,7 @@ class LLMProvider:
             }
             for i in sorted(slots)
         ]
-        return "".join(content_parts), tool_calls, usage
+        return "".join(content_parts), tool_calls, usage, "".join(reasoning_parts)
 
     def _chat_nonstream(
         self,
@@ -180,6 +194,7 @@ class LLMProvider:
 
         content = msg.get("content") or ""
         tool_calls_raw = msg.get("tool_calls") or []
+        reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
 
         tool_calls = []
         for tc in tool_calls_raw:
@@ -199,6 +214,7 @@ class LLMProvider:
             "content": content,
             "tool_calls": tool_calls,
             "usage": self.last_usage,
+            "reasoning": reasoning,
         }
 
     def chat(self, messages: List[Dict[str, Any]], **kwargs) -> str:

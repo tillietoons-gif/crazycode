@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from pycode.provider import LLMProvider, accepts_kwarg
+from pycode.tui import dim
 from pycode.providers import get_preset, detect_preset, PRESETS
 from pycode.context import find_context_files, load_context
 from pycode.context_manager import trim_messages, conversation_tokens, context_stats
@@ -86,6 +87,7 @@ class Agent:
         max_context_tokens: int = 60_000,
         verbose: bool = True,
         use_project_map: bool = True,
+        self_review: bool = False,
     ):
         # Provider preset: if the user named a preset (openai/anthropic/ollama/venice/openrouter)
         # but didn't give an explicit base, fill from the preset.
@@ -135,6 +137,10 @@ class Agent:
         self.hooks = None
         # Set while the LLM is streaming live deltas (suppresses duplicate print)
         self._streamed = False
+        # True when reasoning deltas arrived during the last LLM call
+        self._saw_reasoning = False
+        # Self-review pass: a second reviewer call after edits are applied
+        self.self_review = self_review
 
         # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
         auto_ctx = load_context(self.project_root)
@@ -221,6 +227,7 @@ class Agent:
                 InteractiveDiffReviewer (TUI) when interactive_review is on.
         """
         self.messages.append({"role": "user", "content": user_input})
+        self._touched: List[str] = []
 
         # Record a checkpoint at this user turn so the agent can rewind to it
         self.checkpoint(label=" ".join(user_input.split())[:40])
@@ -260,6 +267,11 @@ class Agent:
                 else:
                     print_assistant(content)
 
+            reasoning = response.get("reasoning") or ""
+            if reasoning and self.verbose:
+                first = reasoning.splitlines()[0][:70] if reasoning.splitlines() else ""
+                print(dim(f"  · thinking {len(reasoning)} chars: {first}"), file=sys.stderr)
+
             assistant_msg: Dict[str, Any] = {"role": "assistant"}
             if content:
                 assistant_msg["content"] = content
@@ -273,6 +285,8 @@ class Agent:
                 if self.dry_run and self._pending_diffs:
                     final += self._apply_pending_diffs(interactive=interactive_review, use_tui=use_tui)
                 self._pending_diffs = []
+                if self.self_review:
+                    final += self._self_review_pass()
                 return final
 
             for tc in tool_calls:
@@ -361,6 +375,10 @@ class Agent:
                     except json.JSONDecodeError:
                         pass
 
+                # Track touched file paths for the self-review pass
+                if fn_name in ("write", "edit") and args.get("path"):
+                    self._touched.append(str(args["path"]))
+
                 ok = not (result.startswith('{"error"') or '"ok": false' in result)
                 self._emit_hook("post_tool", hook_context(fn_name, args, ok=ok))
                 self.feed.end(tc_id, fn_name, args, result, ok=ok, mcp=False)
@@ -426,6 +444,117 @@ class Agent:
             results.append({"step": step, "result": result})
         return {"goal": goal, "steps": steps, "results": results}
 
+    # ------------------------------------------------------------------
+    # Self-review pass
+    # ------------------------------------------------------------------
+
+    _REVIEW_PROMPT = """You are a strict code reviewer. The coding agent just modified these files:
+
+{files}
+
+Here is the current diff:
+
+```diff
+{diff}
+```
+
+The agent's final response was:
+
+{response}
+
+Check the diff for correctness bugs, broken logic, or missed edge cases.
+If there is a problem worth fixing, reply starting with exactly:
+REQUEST REVISION: <one-sentence instruction for the agent>
+Otherwise reply starting with LGTM, optionally followed by minor notes."""
+
+    def _self_review_pass(self) -> str:
+        """Second-opinion review of this turn's edits (once per turn).
+
+        Returns a short note appended to the final response. If the reviewer
+        requests a revision, exactly one corrective turn is run (with
+        self-review disabled to avoid recursion).
+        """
+        touched = getattr(self, "_touched", [])
+        if not touched:
+            return ""
+        # A short git diff grounds the review; skip silently outside git
+        diff_result = dispatch_tool(
+            "bash",
+            {"command": "git diff --unified=3 -- " +
+                        " ".join(f"'{p}'" for p in sorted(set(touched))),
+             "workdir": self.project_root},
+            auto_approve=True,
+        )
+        try:
+            diff = json.loads(diff_result).get("stdout", "")
+        except json.JSONDecodeError:
+            diff = ""
+        if not diff.strip():
+            return ""
+
+        prompt = self._REVIEW_PROMPT.format(
+            files="\n".join(f"- {p}" for p in sorted(set(touched))),
+            diff=diff[:8000],
+            response=(getattr(self, "_last_response", "") or "")[:1500],
+        )
+        try:
+            reply = self.provider.chat(
+                [self.messages[0], {"role": "user", "content": prompt}],
+                tools=None,
+            )
+        except Exception as exc:  # noqa: BLE001 - review is best-effort
+            return f"\n\n[self-review] reviewer unavailable: {exc}"
+
+        if reply.strip().upper().startswith("REQUEST REVISION:"):
+            instruction = reply.split(":", 1)[1].strip()[:300]
+            self.self_review = False  # exactly one revision, no re-review
+            try:
+                self.run(f"A code review found problems in your last change: {instruction}. "
+                         f"Fix them now.")
+            finally:
+                self.self_review = True
+            return f"\n\n[self-review] revision requested: {instruction}"
+        return f"\n\n[self-review] {reply.strip()[:200]}"
+
+    # ------------------------------------------------------------------
+    # Auto-fix loop
+    # ------------------------------------------------------------------
+
+    LOOP_DONE = "GOAL_ACHIEVED"
+
+    @classmethod
+    def _loop_done(cls, result: str) -> bool:
+        return cls.LOOP_DONE in result
+
+    def run_loop(self, goal: str, max_iterations: int = 5) -> Dict[str, Any]:
+        """Auto-fix loop: attempt the goal repeatedly until the agent reports
+        it is achieved or the iteration cap is reached.
+
+        Because the user explicitly launched the loop, turns run with the
+        agent's normal permissions (no extra prompting beyond policy).
+        """
+        results: List[str] = []
+        prompt = goal
+        for attempt in range(1, max_iterations + 1):
+            try:
+                interrupts.check_abort()
+            except interrupts.Aborted:
+                break
+            result = self.run(prompt)
+            results.append(result)
+            if result.startswith("[LLM error") or self._loop_done(result):
+                break
+            prompt = (
+                f"Continue working toward the goal (attempt {attempt + 1} of {max_iterations}):\n"
+                f"Goal: {goal}\n\n"
+                f"Previous turn result (end):\n{result[-1500:]}\n\n"
+                f"If the goal is already fully achieved, reply with exactly {self.LOOP_DONE}. "
+                f"Otherwise keep working: run builds/tests, fix what is broken, and verify."
+            )
+        achieved = bool(results) and self._loop_done(results[-1])
+        return {"goal": goal, "attempts": len(results),
+                "achieved": achieved, "results": results}
+
     def _call_llm(self) -> Dict[str, Any]:
         """Call the LLM provider, falling back to non-streaming if needed.
 
@@ -442,13 +571,12 @@ class Agent:
         live = self.verbose and sys.stdout.isatty()
         if hasattr(self.provider, "chat_stream"):
             try:
+                kwargs: Dict[str, Any] = {}
                 if accepts_kwarg(self.provider.chat_stream, "on_delta"):
-                    result = self.provider.chat_stream(
-                        self.messages, schemas,
-                        on_delta=self._on_stream_delta if live else None,
-                    )
-                else:
-                    result = self.provider.chat_stream(self.messages, schemas)
+                    kwargs["on_delta"] = self._on_stream_delta if live else None
+                if accepts_kwarg(self.provider.chat_stream, "on_reasoning"):
+                    kwargs["on_reasoning"] = self._on_reasoning_delta if live else None
+                result = self.provider.chat_stream(self.messages, schemas, **kwargs)
             except Exception:
                 # Some providers (e.g. Venice) reject streaming; fall back
                 result = self.provider.chat(self.messages, tools=schemas)
@@ -469,6 +597,10 @@ class Agent:
             print()
         sys.stdout.write(text)
         sys.stdout.flush()
+
+    def _on_reasoning_delta(self, text: str) -> None:
+        """Swallow reasoning deltas; the summary is printed once per turn."""
+        self._saw_reasoning = True
 
     def clear(self) -> None:
         """Reset conversation history, keeping the system prompt."""

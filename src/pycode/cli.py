@@ -71,6 +71,22 @@ def _run_with_abort(agent: Agent, use_tui: bool, **kwargs) -> str:
         interrupts.clear_current()
 
 
+def _run_loop_with_abort(agent: Agent, goal: str, loop_max: int,
+                         use_tui: bool = False) -> dict:
+    """Run the auto-fix loop with Esc-to-abort enabled."""
+    controller = interrupts.new_controller()
+    try:
+        if use_tui and interrupts.supports_esc():
+            with interrupts.EscListener(controller):
+                return agent.run_loop(goal, max_iterations=loop_max)
+        return agent.run_loop(goal, max_iterations=loop_max)
+    except interrupts.Aborted:
+        return {"goal": goal, "attempts": 0, "achieved": False,
+                "results": [], "error": "aborted by user"}
+    finally:
+        interrupts.clear_current()
+
+
 def _build_mcp_registry(specs) -> MCPRegistry:
     """Build an MCPRegistry from a list of JSON/JSONL MCP server specs.
 
@@ -150,6 +166,14 @@ def main() -> None:
                         help="Ignore .pycode/config.toml and user config files")
     parser.add_argument("--no-map", action="store_true",
                         help="Disable the project symbol map in the system prompt")
+    parser.add_argument("--agent-loop", metavar="GOAL",
+                        help="Run the auto-fix loop toward GOAL (plan/do/test/fix up to "
+                             "--loop-max attempts), then exit")
+    parser.add_argument("--loop-max", type=int, default=None,
+                        help="Max auto-fix loop attempts (default: 5)")
+    parser.add_argument("--self-review", action="store_true",
+                        help="After edits are applied, a second reviewer call checks the "
+                             "diff and may request one revision")
     parser.add_argument("--no-tab-complete", action="store_true",
                         help="Disable slash-command tab completion")
     parser.add_argument("--export-html", metavar="FILE",
@@ -173,6 +197,8 @@ def main() -> None:
 
     max_iterations = coalesce(args.max_iterations, file_cfg.get("max_iterations"), 30)
     context_budget = coalesce(args.context_budget, file_cfg.get("context_budget"), 60000)
+    loop_max = coalesce(args.loop_max, file_cfg.get("loop_max"), 5)
+    self_review = args.self_review or bool(file_cfg.get("self_review"))
 
     # Apply the theme (CLI --theme > config theme > default) before any output
     theme_name = coalesce(args.theme, file_cfg.get("theme"))
@@ -241,6 +267,7 @@ def main() -> None:
         max_context_tokens=context_budget,
         verbose=not args.quiet,
         use_project_map=not (args.no_map or bool(file_cfg.get("no_map"))),
+        self_review=self_review,
     )
 
     # Wire up confirmation unless auto-approve / yolo is on
@@ -348,6 +375,19 @@ def main() -> None:
     # Determine the prompt
     prompt_parts = " ".join(args.prompt).strip()
 
+    if args.agent_loop:
+        summary = _run_loop_with_abort(agent, args.agent_loop, loop_max,
+                                       use_tui=args.use_tui)
+        print(bold(f"  auto-fix loop: {summary['attempts']} attempt(s), "
+                   f"{'achieved' if summary.get('achieved') else 'not confirmed achieved'}"),
+              file=sys.stderr)
+        last = (summary.get("results") or [""])[-1]
+        if args.use_tui:
+            print_markdown(last, use_color=True)
+        else:
+            print(last, "\n")
+        return
+
     if prompt_parts:
         interactive_review = args.dry_run and not args.non_interactive and sys.stdin.isatty()
         result = _run_with_abort(
@@ -406,6 +446,25 @@ def main() -> None:
                     f"({usage['pct']}%), {usage['messages']} messages",
                     file=sys.stderr,
                 )
+            continue
+        if user_input.startswith("/loop"):
+            parts = user_input.split(None, 1)
+            goal = parts[1].strip() if len(parts) > 1 else ""
+            if not goal:
+                print(f"usage: /loop <goal>   (auto-fix cycle, up to {loop_max} attempts)", file=sys.stderr)
+                continue
+            print(dim(f"  auto-fix loop ({loop_max} max attempts): {goal}"), file=sys.stderr)
+            summary = _run_loop_with_abort(agent, goal, loop_max, use_tui=args.use_tui)
+            if summary.get("error"):
+                print(f"  {c('red','error:')} {summary['error']}", file=sys.stderr)
+            print(bold(f"  loop finished: {summary['attempts']} attempt(s), "
+                       f"{'achieved' if summary.get('achieved') else 'not confirmed achieved'}"),
+                  file=sys.stderr)
+            last = (summary.get("results") or [""])[-1]
+            if args.use_tui:
+                print_markdown(last, use_color=True)
+            else:
+                print(last, "\n")
             continue
         if user_input.startswith("/plan"):
             parts = user_input.split(None, 1)

@@ -77,11 +77,13 @@ class FailoverProvider:
         tools: Optional[List[Dict[str, Any]]] = None,
         usage_sink: Optional[Any] = None,
         on_delta: Optional[Any] = None,
+        on_reasoning: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Call providers in order starting from last_good; return first success.
 
         If usage_sink is a CostTracker, record usage on the provider that
-        actually succeeded. ``on_delta`` is forwarded for live streaming.
+        actually succeeded. ``on_delta``/``on_reasoning`` are forwarded for
+        live streaming when the inner provider accepts them.
         """
         n = len(self.providers)
         order = [self.last_good] + [(self.last_good + 1 + i) % n for i in range(n - 1)]
@@ -89,10 +91,12 @@ class FailoverProvider:
         for idx in order:
             p = self.providers[idx]
             try:
+                kwargs: Dict[str, Any] = {}
                 if accepts_kwarg(p.provider.chat_stream, "on_delta"):
-                    resp = p.provider.chat_stream(messages, tools, on_delta=on_delta)
-                else:
-                    resp = p.provider.chat_stream(messages, tools)
+                    kwargs["on_delta"] = on_delta
+                if accepts_kwarg(p.provider.chat_stream, "on_reasoning"):
+                    kwargs["on_reasoning"] = on_reasoning
+                resp = p.provider.chat_stream(messages, tools, **kwargs)
                 if usage_sink is not None:
                     self._record_usage(usage_sink, p, resp)
                 self.last_good = idx

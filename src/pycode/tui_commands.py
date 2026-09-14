@@ -25,6 +25,7 @@ COMMANDS: Dict[str, str] = {
     "/help": "list commands",
     "/new-context": "generate CLAUDE.md project-instructions file",
     "/plan": "plan-then-execute: draft steps for a goal and run each",
+    "/loop": "auto-fix loop toward a goal (/loop goal, up to --loop-max attempts)",
     "/preset": "show available provider presets",
     "/map": "show the project symbol map",
     "/symbols": "look up symbols in the project index (/symbols name)",
