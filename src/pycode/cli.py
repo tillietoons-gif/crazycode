@@ -177,7 +177,8 @@ def main() -> None:
     prompt_parts = " ".join(args.prompt).strip()
 
     if prompt_parts:
-        result = agent.run(prompt_parts)
+        interactive_review = args.dry_run and not args.non_interactive and sys.stdin.isatty()
+        result = agent.run(prompt_parts, interactive_review=interactive_review)
         print(result)
         if args.non_interactive or not sys.stdin.isatty():
             return
@@ -218,6 +219,7 @@ def main() -> None:
                 "    /resume [file]  load a saved session (latest if omitted)\n"
                 "    /sessions       list saved sessions\n"
                 "    /context        show context window usage\n"
+                "    /new-context    generate CLAUDE.md project-instructions file\n"
                 "    /preset NAME    (show available provider presets)\n"
                 f"    quit / exit     stop\n\n"
                 f"  context: {usage['used']}/{usage['budget']} tokens ({usage['pct']}%)\n"
@@ -235,6 +237,15 @@ def main() -> None:
             continue
         if user_input.startswith("/preset"):
             print("  presets: " + ", ".join(PRESETS), file=sys.stderr)
+            continue
+        if user_input.startswith("/new-context") or user_input.startswith("/context-file"):
+            from pycode.scaffold import generate, exists
+            target = "CLAUDE.md"
+            try:
+                path = generate(name=target, root=args.project_root, overwrite=True)
+                print(f"Wrote {path} (edit it to add your project's conventions)", file=sys.stderr)
+            except Exception as e:
+                print(f"error generating context file: {e}", file=sys.stderr)
             continue
         if user_input.startswith("/save"):
             parts = user_input.split(None, 1)
@@ -267,7 +278,7 @@ def main() -> None:
                     print(f"  {s}", file=sys.stderr)
             continue
 
-        result = agent.run(user_input)
+        result = agent.run(user_input, interactive_review=args.dry_run and sys.stdin.isatty())
         print(result, "\n")
 
 

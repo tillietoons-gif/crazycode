@@ -102,6 +102,8 @@ class Agent:
         self.mcp = None  # set by CLI via attach_mcp()
         # _confirm is set by the CLI; returns False to decline a destructive tool
         self._confirm: Optional[Callable[[str, Dict[str, Any]], bool]] = None
+        # Staged dry-run changes, applied via a DiffReviewer after the tool loop
+        self._pending_diffs: List[Dict[str, Any]] = []
 
         # Auto-load project context if present (CLAUDE.md / .pycode.md / AGENTS.md)
         auto_ctx = load_context(self.project_root)
@@ -135,8 +137,14 @@ class Agent:
         """Set a confirmation callback for destructive tool calls."""
         self._confirm = confirm
 
-    def run(self, user_input: str) -> str:
-        """Process user input and return the agent's final response."""
+    def run(self, user_input: str, interactive_review: bool = False) -> str:
+        """Process user input and return the agent's final response.
+
+        Args:
+            user_input: the prompt
+            interactive_review: if True (and dry_run is on), present each
+                staged write/edit diff for approval before applying.
+        """
         self.messages.append({"role": "user", "content": user_input})
 
         # Trim conversation to fit within the context budget before the LLM call
@@ -174,7 +182,12 @@ class Agent:
             self.messages.append(assistant_msg)
 
             if not tool_calls:
-                return content or "[no response]"
+                final = content or "[no response]"
+                # Apply staged dry-run changes (if any) before returning
+                if self.dry_run and self._pending_diffs:
+                    final += self._apply_pending_diffs(interactive=interactive_review)
+                self._pending_diffs = []
+                return final
 
             for tc in tool_calls:
                 tc_id = tc.get("id", "")
@@ -198,6 +211,17 @@ class Agent:
                     dry_run=self.dry_run,
                     mcp_registry=self.mcp,
                 )
+
+                # When dry_run is on, stage mutating changes for the reviewer
+                if self.dry_run and fn_name in ("write", "edit"):
+                    try:
+                        staged = json.loads(result)
+                        if isinstance(staged, dict) and staged.get("dry_run"):
+                            staged["_tool"] = fn_name
+                            staged["_args"] = args
+                            self._pending_diffs.append(staged)
+                    except json.JSONDecodeError:
+                        pass
 
                 if self.verbose:
                     from pycode.tui import print_tool_result
@@ -233,6 +257,52 @@ class Agent:
     def clear(self) -> None:
         """Reset conversation history, keeping the system prompt."""
         self.messages = [self.messages[0]]
+
+    def _apply_pending_diffs(self, interactive: bool = False) -> str:
+        """Apply staged dry-run changes via the DiffReviewer.
+
+        Returns a short summary line appended to the agent's response.
+        """
+        from pycode.diff_reviewer import DiffReviewer
+        if not self._pending_diffs:
+            return ""
+        reviewer = DiffReviewer(auto_approve=self.auto_approve)
+        for change in self._pending_diffs:
+            reviewer.stage(change)
+        summary = reviewer.review() if interactive else self._auto_apply(reviewer)
+        applied = summary.get("approved", 0)
+        rejected = summary.get("rejected", 0)
+        self._pending_diffs = []
+        note = f"\n\n[dry-run] applied {applied} change(s)"
+        if rejected:
+            note += f", rejected {rejected}"
+        return note
+
+    def _auto_apply(self, reviewer) -> Dict[str, Any]:
+        """Apply all staged changes without prompting (non-interactive review)."""
+        applied, rejected = 0, 0
+        for change in list(reviewer.pending):
+            try:
+                reviewer._apply(change.get("_tool", "write"), change.get("_args", {}))
+                applied += 1
+            except Exception:  # noqa: BLE001
+                rejected += 1
+        reviewer.pending = []
+        return {"approved": applied, "rejected": rejected, "total": applied + rejected}
+
+    def review_pending(self, interactive: bool = True) -> Dict[str, int]:
+        """Public: review/apply currently staged dry-run changes.
+
+        Call after agent.run(..., interactive_review=False) if you want to
+        gate changes manually rather than auto-applying them.
+        """
+        from pycode.diff_reviewer import DiffReviewer
+        reviewer = DiffReviewer(auto_approve=self.auto_approve)
+        for change in self._pending_diffs:
+            reviewer.stage(change)
+        summary = reviewer.review() if interactive else self._auto_apply(reviewer)
+        self._pending_diffs = []
+        return summary
 
     def context_usage(self) -> Dict[str, int]:
         """Return token-usage stats for the current conversation."""
