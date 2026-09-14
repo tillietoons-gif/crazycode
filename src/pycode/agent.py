@@ -20,6 +20,7 @@ from pycode.tui_subagent_trace import SubagentTrace
 from pycode.tools import TOOL_SCHEMAS, dispatch_tool
 from pycode.cost import CostTracker
 from pycode.failover import FailoverProvider, ProviderConfig
+from pycode import interrupts
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -198,6 +199,10 @@ class Agent:
             )
 
         for iteration in range(1, self.max_iterations + 1):
+            try:
+                interrupts.check_abort()
+            except interrupts.Aborted:
+                return "[aborted by user]"
             if self.verbose:
                 from pycode.tui import Spinner
                 with Spinner(f"iteration {iteration}"):
@@ -234,6 +239,10 @@ class Agent:
                 return final
 
             for tc in tool_calls:
+                try:
+                    interrupts.check_abort()
+                except interrupts.Aborted:
+                    return "[aborted by user]"
                 tc_id = tc.get("id", "")
                 fn_name = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments", "{}")

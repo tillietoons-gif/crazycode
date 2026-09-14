@@ -1,14 +1,16 @@
 """pycode - Python AI Coding Agent (Claude Code alternative)."""
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 from pycode.agent import Agent
 from pycode.cli import main
+from pycode.config import load_config, parse_toml, find_config_files, project_config_path
 from pycode.context import load_context, find_context_files
 from pycode.context_manager import trim_messages, conversation_tokens, context_stats
 from pycode.cost import CostTracker, TokenUsage, pricing_for
 from pycode.diff_reviewer import DiffReviewer, render_diff, review_single
 from pycode.failover import FailoverProvider, ProviderConfig
+from pycode.interrupts import Aborted, AbortController, EscListener, check_abort, new_controller
 from pycode.mcp import MCPRegistry, MCPServer
 from pycode.onboarding import has_any_credential, onboarding_message
 from pycode.permissions import PermissionGuard, make_permission_confirm
@@ -30,10 +32,14 @@ from pycode.tui_pager import paginate_or_print
 from pycode.tui_session_picker import pick_session, collect_sessions
 from pycode.tui_statusbar import update_status, build_status_line
 from pycode.tui_subagent_trace import SubagentTrace
+from pycode.tui_theme import apply_theme, available_themes, resolve_theme, THEMES
 
 __all__ = [
     "Agent", "LLMProvider", "LLMProviderError", "build_cached_system_messages", "main", "TOOLS", "TOOL_SCHEMAS",
     "PRESETS", "get_preset", "detect_preset",
+    "load_config", "parse_toml", "find_config_files", "project_config_path",
+    "Aborted", "AbortController", "EscListener", "check_abort", "new_controller",
+    "apply_theme", "available_themes", "resolve_theme", "THEMES",
     "load_context", "find_context_files",
     "trim_messages", "conversation_tokens", "context_stats",
     "CostTracker", "TokenUsage", "pricing_for",

@@ -68,6 +68,8 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 - **Live status bar** for context, cost, and model.
 - **Activity feed** with ✓/✗/→ glyphs and expandable detail.
 - **Slash-command tab-completion**, aliases, and a `/help` listing.
+- **Color themes** (`default`, `mono`, `dracula`, `nord`, `solarized`).
+- **Esc-to-abort** — press Escape during a turn to stop it cleanly.
 
 ---
 
@@ -113,6 +115,37 @@ var for you:
 | `ollama` | `llama3.1:8b` | (local, optional) |
 | `venice` | `deepseek-v4-1-flash` | `VENICE_API_KEY` |
 | `openrouter` | `anthropic/claude-3.5-sonnet` | `OPENROUTER_API_KEY` |
+
+### Config files
+
+For settings you want to keep, use a TOML config file instead of env vars.
+Both a user-level and a project-level file are read and merged
+(CLI flags > env vars > project config > user config > preset defaults):
+
+- `~/.config/pycode/config.toml` (or `~/.pycode/config.toml`)
+- `<project>/.pycode/config.toml`
+
+Start from the example:
+
+```bash
+cp .pycode/config.toml.example .pycode/config.toml
+```
+
+```toml
+theme = "nord"
+auto_approve = false
+context_budget = 80000
+max_iterations = 40
+
+[provider]
+model = "gpt-4o"
+api_base = "https://api.openai.com/v1"
+temperature = 0.2
+max_tokens = 4096
+```
+
+Pass `--no-config` to ignore both files, or `--theme <name>` to override the
+theme for a single run.
 
 ---
 
@@ -183,7 +216,9 @@ Sessions
 Cost / TUI
   --cost / --no-cost
   --plain           Plain text output (disable all TUI)
+  --theme NAME      Color theme (default|mono|dracula|nord|solarized)
   --no-tab-complete
+  --no-config       Ignore config.toml files
 
 Output
   --quiet, --non-interactive
@@ -205,6 +240,7 @@ Output
 | `/new-context` | Generate a `CLAUDE.md` project-instructions file |
 | `/export [file]` | Export the session to styled HTML |
 | `/preset` | List provider presets |
+| `/theme [name]` | Show or switch the color theme |
 | `help` / `?` | Full command list + aliases |
 | `quit` / `exit` / `:q` | Stop |
 
@@ -219,6 +255,8 @@ src/pycode/
   provider.py         OpenAI-compatible client (stream + fallback)
   providers.py        provider presets & auto-detection
   failover.py         multi-provider failover chain
+  config.py           layered TOML config (user + project)
+  interrupts.py       Esc-to-abort controller + listener
   tools.py            the 10 tools + dispatch + destructive detection
   permissions.py      .pycode/permissions.toml policy engine
   subagents.py        task-tool subagent dispatch
@@ -233,9 +271,10 @@ src/pycode/
   onboarding.py       first-run setup guidance
   tui*.py             terminal UI (markdown, status bar, feed, reviewer,
                        picker, context view, subagent trace, inspector, pager)
-tests/                unittest suite (157 tests across 8 modules)
+  tui_theme.py        named color themes
+tests/                unittest suite (185 tests across 9 modules)
 .env.example          copy-pasteable configuration template
-.pycode/              project-level policies & auto-saved sessions
+.pycode/              project-level config, policies & auto-saved sessions
 ```
 
 ---

@@ -27,6 +27,11 @@ else:
     _C = {k: "" for k in ["reset", "bold", "dim", "red", "green", "yellow", "blue", "magenta", "cyan", "gray"]}
 
 
+def colors_enabled() -> bool:
+    """True when ANSI coloring is active for stdout."""
+    return bool(_C.get("reset"))
+
+
 def c(color: str, text: str) -> str:
     """Wrap text in an ANSI color."""
     return f"{_C.get(color, '')}{text}{_C['reset']}"

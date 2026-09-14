@@ -30,6 +30,7 @@ COMMANDS: Dict[str, str] = {
     "/resume": "load a saved session",
     "/save": "save session to JSONL",
     "/sessions": "list saved sessions",
+    "/theme": "show or switch color theme (/theme <name>)",
 }
 
 # alias -> canonical command
@@ -54,15 +55,17 @@ ALIASES: Dict[str, str] = {
 def canonicalize(user_input: str) -> str:
     """Expand a typed command/alias to its canonical form.
 
-    Non-command input (plain prompts) passes through unchanged.
+    Non-command input (plain prompts) passes through unchanged. Full command
+    names are preserved verbatim (``/cost`` must not collapse to ``/clear``),
+    so prefix expansion is limited to colon-style aliases.
     """
     s = user_input.strip()
-    # exact alias
+    # exact alias (also covers "/s" -> "/save", "?" -> "/help")
     if s in ALIASES:
         return ALIASES[s]
-    # prefix match on alias (e.g. ":cl" -> ":clear")
+    # prefix match on colon aliases only (e.g. ":cl" -> ":clear" -> "/clear")
     for alias, target in ALIASES.items():
-        if len(alias) >= 2 and s.startswith(alias.rstrip(":")):
+        if alias.startswith(":") and len(alias) >= 2 and s.startswith(alias):
             return target
     return s
 

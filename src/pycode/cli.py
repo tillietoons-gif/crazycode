@@ -9,6 +9,8 @@ import shlex
 import sys
 
 from pycode.agent import Agent
+from pycode.config import load_config, find_config_files, coalesce
+from pycode import interrupts
 from pycode.mcp import MCPRegistry
 from pycode.providers import PRESETS, get_preset, detect_preset
 from pycode.session import latest_session
@@ -23,6 +25,7 @@ from pycode.tui_context_view import print_context
 from pycode.tui_inspector import inspector_report
 from pycode.tui_pager import paginate_or_print
 from pycode.session_export import export_to_html
+from pycode.tui_theme import apply_theme, available_themes, current_theme
 from pycode.onboarding import has_any_credential, onboarding_message, should_show_onboarding, mark_onboarded
 
 
@@ -52,6 +55,20 @@ def _confirm_prompt(tool: str, args: dict) -> bool:
     except (EOFError, KeyboardInterrupt):
         return False
     return answer in ("y", "yes")
+
+
+def _run_with_abort(agent: Agent, use_tui: bool, **kwargs) -> str:
+    """Run one agent turn, watching for Esc to abort on a TTY."""
+    controller = interrupts.new_controller()
+    try:
+        if use_tui and interrupts.supports_esc():
+            with interrupts.EscListener(controller):
+                return agent.run(**kwargs)
+        return agent.run(**kwargs)
+    except interrupts.Aborted:
+        return "[aborted by user]"
+    finally:
+        interrupts.clear_current()
 
 
 def _build_mcp_registry(specs) -> MCPRegistry:
@@ -95,14 +112,15 @@ def main() -> None:
     parser.add_argument("--temperature", type=float, help="Sampling temperature")
     parser.add_argument("--max-tokens", type=int, help="Max response tokens")
     parser.add_argument("--system-prompt-file", help="Path to extra system instructions")
-    parser.add_argument("--max-iterations", type=int, default=30, help="Max tool-loop iterations per prompt")
+    parser.add_argument("--max-iterations", type=int, default=None,
+                        help="Max tool-loop iterations per prompt (default: 30)")
     parser.add_argument("--quiet", action="store_true", help="Suppress stderr progress output")
     parser.add_argument("--non-interactive", action="store_true", help="Run prompt then exit (no REPL)")
     parser.add_argument("--auto-approve", action="store_true",
                         help="Auto-approve destructive tools (skip confirmations)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Preview write/edit changes as diffs instead of applying")
-    parser.add_argument("--context-budget", type=int, default=60000,
+    parser.add_argument("--context-budget", type=int, default=None,
                         help="Context token budget for auto-trimming (default: 60000)")
     parser.add_argument("--resume", metavar="FILE",
                         help="Resume from a saved JSONL session file")
@@ -126,6 +144,10 @@ def main() -> None:
     parser.add_argument("--plain", action="store_true",
                         help="Disable fancy TUI (markdown, status bar, feed, keyboard review) "
                              "- plain text output only")
+    parser.add_argument("--theme", choices=available_themes(), default=None,
+                        help="TUI color theme (overrides config file; default: default)")
+    parser.add_argument("--no-config", action="store_true",
+                        help="Ignore .pycode/config.toml and user config files")
     parser.add_argument("--no-tab-complete", action="store_true",
                         help="Disable slash-command tab completion")
     parser.add_argument("--export-html", metavar="FILE",
@@ -134,6 +156,30 @@ def main() -> None:
                         help="Show the first-run onboarding even if a key is present")
 
     args = parser.parse_args()
+
+    # Layered config: CLI > env > project config > user config > preset defaults
+    file_cfg = {} if args.no_config else load_config(args.project_root)
+    if file_cfg and not args.quiet:
+        for path in find_config_files(args.project_root):
+            print(dim(f"  config: {path}"), file=sys.stderr)
+
+    # Fold config-file booleans/defaults into args (CLI flags always win)
+    args.auto_approve = args.auto_approve or bool(file_cfg.get("auto_approve"))
+    args.quiet = args.quiet or bool(file_cfg.get("quiet"))
+    args.plain = args.plain or bool(file_cfg.get("plain"))
+    args.cost = args.cost or bool(file_cfg.get("cost"))
+
+    max_iterations = coalesce(args.max_iterations, file_cfg.get("max_iterations"), 30)
+    context_budget = coalesce(args.context_budget, file_cfg.get("context_budget"), 60000)
+
+    # Apply the theme (CLI --theme > config theme > default) before any output
+    theme_name = coalesce(args.theme, file_cfg.get("theme"))
+    if theme_name:
+        try:
+            apply_theme(theme_name)
+        except ValueError as e:
+            print(f"{c('yellow','warn:')} {e}", file=sys.stderr)
+
     # Plain mode disables all fancy TUI enhancements
     args.use_tui = not args.plain and sys.stderr.isatty()
 
@@ -147,10 +193,18 @@ def main() -> None:
 
     cfg = {
         "api_key": args.api_key or env_cfg.get("api_key") or preset_cfg.get("api_key"),
-        "api_base": args.api_base or env_cfg.get("api_base") or preset_cfg.get("api_base"),
-        "model": args.model or env_cfg.get("model") or preset_cfg.get("model"),
-        "temperature": args.temperature if args.temperature is not None else env_cfg.get("temperature"),
-        "max_tokens": args.max_tokens if args.max_tokens is not None else env_cfg.get("max_tokens"),
+        "api_base": coalesce(args.api_base,
+                             os.getenv("PYCODE_API_BASE") or os.getenv("OPENAI_API_BASE"),
+                             file_cfg.get("api_base"),
+                             env_cfg.get("api_base"),
+                             preset_cfg.get("api_base")),
+        "model": coalesce(args.model,
+                          os.getenv("PYCODE_MODEL") or os.getenv("OPENAI_MODEL"),
+                          file_cfg.get("model"),
+                          env_cfg.get("model"),
+                          preset_cfg.get("model")),
+        "temperature": coalesce(args.temperature, env_cfg.get("temperature"), file_cfg.get("temperature")),
+        "max_tokens": coalesce(args.max_tokens, env_cfg.get("max_tokens"), file_cfg.get("max_tokens")),
         "system_prompt_extra": args.system_prompt_file and open(args.system_prompt_file).read()
                                or env_cfg.get("system_prompt_extra", ""),
     }
@@ -165,8 +219,8 @@ def main() -> None:
         project_root=args.project_root,
         auto_approve=args.auto_approve or args.yolo,
         dry_run=args.dry_run,
-        max_iterations=args.max_iterations,
-        max_context_tokens=args.context_budget,
+        max_iterations=max_iterations,
+        max_context_tokens=context_budget,
         verbose=not args.quiet,
     )
 
@@ -264,7 +318,10 @@ def main() -> None:
 
     if prompt_parts:
         interactive_review = args.dry_run and not args.non_interactive and sys.stdin.isatty()
-        result = agent.run(prompt_parts, interactive_review=interactive_review)
+        result = _run_with_abort(
+            agent, args.use_tui,
+            user_input=prompt_parts, interactive_review=interactive_review,
+        )
         print(result)
         if args.non_interactive or not sys.stdin.isatty():
             return
@@ -320,6 +377,18 @@ def main() -> None:
             continue
         if user_input.startswith("/preset"):
             print("  presets: " + ", ".join(PRESETS), file=sys.stderr)
+            continue
+        if user_input.startswith("/theme"):
+            parts = user_input.split(None, 1)
+            if len(parts) > 1 and parts[1].strip():
+                try:
+                    apply_theme(parts[1].strip(), force=True)
+                    print(f"  theme: {current_theme()}", file=sys.stderr)
+                except ValueError as e:
+                    print(f"  {c('red','error:')} {e}", file=sys.stderr)
+            else:
+                print(f"  themes: {', '.join(available_themes())}", file=sys.stderr)
+                print(f"  current: {current_theme()}", file=sys.stderr)
             continue
         if user_input.startswith("/rewind"):
             pts = agent.rewind_points()
@@ -470,8 +539,9 @@ def main() -> None:
         interactive_review = (
             args.dry_run and args.use_tui and sys.stdin.isatty() and not args.non_interactive
         )
-        result = agent.run(
-            user_input,
+        result = _run_with_abort(
+            agent, args.use_tui,
+            user_input=user_input,
             interactive_review=interactive_review,
             use_tui=args.use_tui,
         )

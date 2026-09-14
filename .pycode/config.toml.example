@@ -1,0 +1,21 @@
+# pycode configuration (copy to .pycode/config.toml)
+#
+# Precedence: CLI flags > PYCODE_* env vars > this file > user config
+# User config lives at ~/.config/pycode/config.toml or ~/.pycode/config.toml.
+
+theme = "default"
+auto_approve = false
+quiet = false
+plain = false
+cost = false
+context_budget = 60000
+max_iterations = 30
+
+[provider]
+# model = "gpt-4o"
+# api_base = "https://api.openai.com/v1"
+# temperature = 0.3
+# max_tokens = 8192
+
+[ui]
+# theme = "nord"
