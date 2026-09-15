@@ -35,8 +35,6 @@ jobs:
             artifact: pycode-linux-x86_64
           - os: macos-latest
             artifact: pycode-macos-arm64
-          - os: macos-13
-            artifact: pycode-macos-x86_64
           - os: windows-latest
             artifact: pycode-windows-x86_64.zip
     steps:
@@ -81,7 +79,6 @@ jobs:
           cp artifacts/python-packages/* release/ 2>/dev/null || true
           cp artifacts/pycode-linux-x86_64/pycode release/ 2>/dev/null || true
           cp artifacts/pycode-macos-arm64/pycode release/pycode-macos-arm64 2>/dev/null || true
-          cp artifacts/pycode-macos-x86_64/pycode release/pycode-macos-x86_64 2>/dev/null || true
           cp artifacts/pycode-windows-x86_64.zip/pycode-windows-x86_64.zip release/ 2>/dev/null || true
           ls -la release/
       - name: Attach to release

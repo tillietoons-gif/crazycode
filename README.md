@@ -135,7 +135,7 @@ via `PYCODE_HOME` / `PYCODE_REPO` env vars.
 Each release also ships standalone binaries — no Python needed:
 
 - `pycode-linux-x86_64`
-- `pycode-macos-arm64` / `pycode-macos-x86_64`
+- `pycode-macos-arm64` (Apple Silicon; Intel Macs can run it via Rosetta)
 - `pycode-windows-x86_64.zip`
 
 Download one, `chmod +x` it (unix), and run it like the `pycode` command.

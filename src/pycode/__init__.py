@@ -1,6 +1,6 @@
 """pycode - Python AI Coding Agent (Claude Code alternative)."""
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 from pycode.agent import Agent
 from pycode.cli import main

@@ -52,7 +52,7 @@ Pushing the tag triggers the `release.yml` workflow, which builds and
 attaches to the GitHub release automatically:
 
 - `pycode-X.Y.Z.tar.gz` (sdist) and `.whl`
-- `pycode-linux-x86_64`, `pycode-macos-arm64`, `pycode-macos-x86_64`
+- `pycode-linux-x86_64`, `pycode-macos-arm64`
 - `pycode-windows-x86_64.zip`
 
 Check the Actions run completes and the release page lists all artifacts.
