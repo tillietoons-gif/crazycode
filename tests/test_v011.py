@@ -200,7 +200,8 @@ class TestProjectIndex(unittest.TestCase):
         idx = self._index()
         idx.build(save=False)
         text = idx.summary()
-        self.assertIn("src/mod.py:", text)
+        # separators are OS-dependent; compare basenames
+        self.assertIn("mod.py:", text)
         self.assertIn("app.js:", text)
         self.assertIn("class Greeter", text)
 

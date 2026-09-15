@@ -477,12 +477,11 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
         touched = getattr(self, "_touched", [])
         if not touched:
             return ""
-        # A short git diff grounds the review; skip silently outside git.
-        # Double-quoted paths work on both POSIX shells and cmd.exe.
+        # A short git diff grounds the review; skip silently outside git
         diff_result = dispatch_tool(
             "bash",
             {"command": "git diff --unified=3 -- " +
-                        " ".join(f'"{p}"' for p in sorted(set(touched))),
+                        " ".join(f"'{p}'" for p in sorted(set(touched))),
              "workdir": self.project_root},
             auto_approve=True,
         )

@@ -39,15 +39,13 @@ class JobManager:
         out_path = self.output_dir / f"{job_id}.log"
         try:
             with open(out_path, "wb") as fh:
-                # shell=True: /bin/sh on POSIX, cmd.exe on Windows
                 proc = subprocess.Popen(
-                    command,
-                    shell=True,
+                    ["bash", "-c", command],
                     stdout=fh,
                     stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL,
                     cwd=workdir or None,
-                    start_new_session=(os.name == "posix"),
+                    start_new_session=True,
                 )
         except Exception as exc:  # noqa: BLE001
             return {"error": f"failed to start job: {exc}", "ok": False}
@@ -103,19 +101,12 @@ class JobManager:
         proc = entry["proc"]
         if proc.poll() is None:
             try:
-                if os.name == "posix":
-                    # kill the whole process group so shell children die too
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                else:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
+                # kill the whole process group so shell children die too
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 pass
         return {"ok": True, "job_id": job_id, "killed": True}
