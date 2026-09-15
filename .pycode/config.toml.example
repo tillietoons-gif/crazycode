@@ -12,6 +12,7 @@ context_budget = 60000
 max_iterations = 30
 
 [provider]
+# api_key = "sk-..."          # set by `pycode --wizard` (plaintext; chmod this file 600)
 # model = "gpt-4o"
 # api_base = "https://api.openai.com/v1"
 # temperature = 0.3

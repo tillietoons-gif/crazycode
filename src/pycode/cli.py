@@ -27,6 +27,7 @@ from pycode.tui_pager import paginate_or_print
 from pycode.session_export import export_to_html
 from pycode.tui_theme import apply_theme, available_themes, current_theme
 from pycode.onboarding import has_any_credential, onboarding_message, should_show_onboarding, mark_onboarded
+from pycode.wizard import needs_wizard
 
 
 def _print_config(cfg: dict) -> None:
@@ -174,6 +175,11 @@ def main() -> None:
     parser.add_argument("--self-review", action="store_true",
                         help="After edits are applied, a second reviewer call checks the "
                              "diff and may request one revision")
+    parser.add_argument("--wizard", action="store_true",
+                        help="Run the first-run setup wizard (auto-runs on first interactive "
+                             "launch without a key)")
+    parser.add_argument("--no-wizard", action="store_true",
+                        help="Never auto-run the setup wizard")
     parser.add_argument("--no-tab-complete", action="store_true",
                         help="Disable slash-command tab completion")
     parser.add_argument("--export-html", metavar="FILE",
@@ -236,7 +242,7 @@ def main() -> None:
         preset_cfg = get_preset(args.preset)
 
     cfg = {
-        "api_key": args.api_key or env_cfg.get("api_key") or preset_cfg.get("api_key"),
+        "api_key": coalesce(args.api_key, env_cfg.get("api_key"), file_cfg.get("api_key"), preset_cfg.get("api_key")),
         "api_base": coalesce(args.api_base,
                              os.getenv("PYCODE_API_BASE") or os.getenv("OPENAI_API_BASE"),
                              file_cfg.get("api_base"),
@@ -252,6 +258,24 @@ def main() -> None:
         "system_prompt_extra": args.system_prompt_file and open(args.system_prompt_file).read()
                                or env_cfg.get("system_prompt_extra", ""),
     }
+
+    # First-run setup wizard: explicit --wizard, or auto on an interactive
+    # launch that has no provider key configured anywhere yet.
+    if needs_wizard(
+        has_api_key=bool(cfg.get("api_key")),
+        interactive=sys.stdin.isatty() and not args.non_interactive,
+        force=args.wizard,
+        no_wizard=args.no_wizard,
+    ):
+        from pycode.wizard import run_wizard
+        wiz = run_wizard(has_api_key=bool(cfg.get("api_key")), root=args.project_root)
+        if wiz.get("api_key"):
+            cfg["api_key"] = wiz["api_key"]
+        if wiz.get("model"):
+            cfg["model"] = wiz["model"]
+        if wiz.get("config_path"):
+            if not args.quiet:
+                print(dim(f"  config: {wiz['config_path']}"), file=sys.stderr)
 
     agent = Agent(
         api_key=cfg["api_key"],

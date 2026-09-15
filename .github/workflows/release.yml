@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  python-packages:
+    name: python packages (sdist + wheel)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - name: Build sdist and wheel
+        run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-packages
+          path: dist/*
+
+  binaries:
+    name: binary (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: pycode-linux-x86_64
+          - os: macos-latest
+            artifact: pycode-macos-arm64
+          - os: macos-13
+            artifact: pycode-macos-x86_64
+          - os: windows-latest
+            artifact: pycode-windows-x86_64.zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build deps
+        run: pip install . pyinstaller
+      - name: Build binary (unix)
+        if: runner.os != 'Windows'
+        run: pyinstaller --onefile --name pycode pycode-launcher.py
+      - name: Build binary (windows)
+        if: runner.os == 'Windows'
+        run: pyinstaller --onefile --name pycode.exe pycode-launcher.py
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\pycode.exe -DestinationPath dist\pycode-windows-x86_64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/pycode
+            dist/pycode.exe
+            dist/pycode-windows-x86_64.zip
+          if-no-files-found: error
+
+  publish:
+    name: attach artifacts to GitHub release
+    needs: [python-packages, binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Organize release files
+        run: |
+          mkdir -p release
+          cp artifacts/python-packages/* release/ 2>/dev/null || true
+          cp artifacts/pycode-linux-x86_64/pycode release/ 2>/dev/null || true
+          cp artifacts/pycode-macos-arm64/pycode release/pycode-macos-arm64 2>/dev/null || true
+          cp artifacts/pycode-macos-x86_64/pycode release/pycode-macos-x86_64 2>/dev/null || true
+          cp artifacts/pycode-windows-x86_64.zip/pycode-windows-x86_64.zip release/ 2>/dev/null || true
+          ls -la release/
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

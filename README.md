@@ -10,12 +10,13 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  pycode · v1.0.0                                                     │
+│  pycode · v1.1.0                                                     │
 │                                                                      │
 │  15 tools · 5 provider presets · MCP plugins · subagents             │
 │  project symbol map · background jobs · hooks · themes               │
 │  SSE streaming · Esc-to-abort · self-review · auto-fix loop          │
-│  274 passing tests                                                   │
+│  installers for Linux/macOS/Windows · setup wizard                   │
+│  288 passing tests                                                   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -109,12 +110,40 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 
 ## Installation
 
-```bash
-# from this repository
-pip install -e .
+### One-command installers (recommended)
 
-# or install globally (provides the `pycode` command)
-pip install .
+Grab the latest release from the project's GitHub **Releases** page, then:
+
+**Linux / macOS:**
+
+```bash
+sh install.sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Both scripts check prerequisites (Python 3.10+, git), install into a
+persistent venv, and put `pycode` on your PATH. Locations are overridable
+via `PYCODE_HOME` / `PYCODE_REPO` env vars.
+
+### Prebuilt binaries
+
+Each release also ships standalone binaries — no Python needed:
+
+- `pycode-linux-x86_64`
+- `pycode-macos-arm64` / `pycode-macos-x86_64`
+- `pycode-windows-x86_64.zip`
+
+Download one, `chmod +x` it (unix), and run it like the `pycode` command.
+
+### From source
+
+```bash
+pip install -e .
 ```
 
 Requires Python ≥ 3.10. The only runtime dependency is `requests`.
@@ -149,6 +178,26 @@ var for you:
 | `ollama` | `llama3.1:8b` | (local, optional) |
 | `venice` | `deepseek-v4-1-flash` | `VENICE_API_KEY` |
 | `openrouter` | `anthropic/claude-3.5-sonnet` | `OPENROUTER_API_KEY` |
+
+### First-run setup wizard
+
+The first interactive launch without a configured key opens a short setup
+wizard automatically:
+
+1. pick a provider (openai / anthropic / ollama / venice / openrouter)
+2. paste your API key (skipped for local Ollama)
+3. optionally override the model
+
+The result is written to `<project>/.pycode/config.toml` when the directory
+is writable, else `~/.config/pycode/config.toml`, and the wizard marks
+itself done so it never nags again.
+
+Re-run it any time with:
+
+```bash
+pycode --wizard        # force the wizard
+pycode --no-wizard     # never auto-run it
+```
 
 ### Config files
 
@@ -311,6 +360,10 @@ Cost / TUI
 Output
   --quiet, --non-interactive
   --force-onboard     Show first-run onboarding even with a key present
+
+Setup wizard
+  --wizard            Run the setup wizard now
+  --no-wizard         Never auto-run the wizard
 ```
 
 ### In-REPL commands
@@ -366,10 +419,11 @@ src/pycode/
   mcp.py              MCP stdio client
   scaffold.py         CLAUDE.md template generator
   onboarding.py       first-run setup guidance
+  wizard.py           interactive first-run setup wizard
   tui*.py             terminal UI (markdown, status bar, feed, reviewer,
                        picker, context view, subagent trace, inspector, pager)
   tui_theme.py        named color themes
-tests/                unittest suite (274 tests across 13 modules)
+tests/                unittest suite (288 tests across 14 modules)
 docs/                 roadmap spec + release checklist
 .env.example          copy-pasteable configuration template
 .pycode/              project-level config, policies & auto-saved sessions
