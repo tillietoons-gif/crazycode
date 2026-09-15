@@ -29,7 +29,9 @@ from pycode.tools import TOOL_SCHEMAS, TOOLS, dispatch_tool, is_destructive
 
 class TestJobManager(unittest.TestCase):
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
+        # ignore_cleanup_errors: on Windows a just-killed child can hold the
+        # log file open for a moment (WinError 32)
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.jobs = JobManager(output_dir=self._tmp.name)
 
     def tearDown(self):

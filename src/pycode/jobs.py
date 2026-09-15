@@ -116,8 +116,14 @@ class JobManager:
                         proc.wait(timeout=5)
                     except subprocess.TimeoutExpired:
                         proc.kill()
+                        proc.wait(timeout=5)
             except (ProcessLookupError, PermissionError):
                 pass
+        # reap regardless of who finished first; wait so OS handles release
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
         return {"ok": True, "job_id": job_id, "killed": True}
 
     # ------------------------------------------------------------------
