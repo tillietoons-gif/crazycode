@@ -12,6 +12,9 @@ from pycode.tools import TOOLS, TOOL_SCHEMAS, dispatch_tool
 from pycode.agent import Agent
 from pycode.provider import LLMProvider
 
+# Repo root derived from this file's location, so tests pass from any checkout
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 class TestTools(unittest.TestCase):
     def test_bash(self):
@@ -51,13 +54,14 @@ class TestTools(unittest.TestCase):
             os.unlink(path)
 
     def test_glob(self):
-        results = dispatch_tool("glob", {"pattern": "src/**/*.py", "path": "/workspace"})
-        self.assertIn("/workspace/src/pycode/agent.py", json.loads(results))
+        results = dispatch_tool("glob", {"pattern": "src/**/*.py", "path": REPO_ROOT})
+        self.assertIn(os.path.join(REPO_ROOT, "src", "pycode", "agent.py"),
+                      json.loads(results))
 
     def test_grep(self):
         results = json.loads(dispatch_tool("grep", {
             "pattern": "import",
-            "path": "/workspace/src",
+            "path": os.path.join(REPO_ROOT, "src"),
             "include": "*.py",
             "max_results": 5,
         }))
