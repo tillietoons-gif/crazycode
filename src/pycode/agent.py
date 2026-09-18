@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -139,6 +140,8 @@ class Agent:
         self._streamed = False
         # True when reasoning deltas arrived during the last LLM call
         self._saw_reasoning = False
+        # Summary of the last completed turn (tool calls, duration, files)
+        self.last_turn: Dict[str, Any] = {}
         # Self-review pass: a second reviewer call after edits are applied
         self.self_review = self_review
 
@@ -216,6 +219,24 @@ class Agent:
         """Set a confirmation callback for destructive tool calls."""
         self._confirm = confirm
 
+    def _end_turn(self, tool_count: int, started: float, reasoning_seen: bool) -> None:
+        """Build the last-turn summary for the TUI panel."""
+        try:
+            from pycode.tui_turn import summarize_turn
+            self.last_turn = summarize_turn(
+                tool_count, time.time() - started,
+                list(getattr(self, "_touched", [])),
+                self.project_root,
+                reasoning=reasoning_seen,
+            )
+        except Exception:  # noqa: BLE001 - panel is best-effort
+            self.last_turn = {
+                "tool_calls": tool_count,
+                "duration_s": round(time.time() - started, 1),
+                "files": [],
+                "reasoning": reasoning_seen,
+            }
+
     def run(self, user_input: str, interactive_review: bool = False, use_tui: bool = False) -> str:
         """Process user input and return the agent's final response.
 
@@ -228,6 +249,9 @@ class Agent:
         """
         self.messages.append({"role": "user", "content": user_input})
         self._touched: List[str] = []
+        turn_started = time.time()
+        turn_tools = 0
+        turn_reasoning = False
 
         # Record a checkpoint at this user turn so the agent can rewind to it
         self.checkpoint(label=" ".join(user_input.split())[:40])
@@ -243,18 +267,21 @@ class Agent:
             try:
                 interrupts.check_abort()
             except interrupts.Aborted:
+                self._end_turn(turn_tools, turn_started, turn_reasoning)
                 return "[aborted by user]"
             if self.verbose:
                 from pycode.tui import Spinner
-                with Spinner(f"iteration {iteration}"):
+                with Spinner(f"thinking · iter {iteration}"):
                     try:
                         response = self._call_llm()
                     except Exception as exc:  # noqa: BLE001
+                        self._end_turn(turn_tools, turn_started, turn_reasoning)
                         return f"[LLM error: {exc}]"
             else:
                 try:
                     response = self._call_llm()
                 except Exception as exc:  # noqa: BLE001
+                    self._end_turn(turn_tools, turn_started, turn_reasoning)
                     return f"[LLM error: {exc}]"
 
             content = response.get("content", "")
@@ -268,9 +295,11 @@ class Agent:
                     print_assistant(content)
 
             reasoning = response.get("reasoning") or ""
-            if reasoning and self.verbose:
-                first = reasoning.splitlines()[0][:70] if reasoning.splitlines() else ""
-                print(dim(f"  · thinking {len(reasoning)} chars: {first}"), file=sys.stderr)
+            if reasoning:
+                turn_reasoning = True
+                if self.verbose:
+                    first = reasoning.splitlines()[0][:70] if reasoning.splitlines() else ""
+                    print(dim(f"  · thinking {len(reasoning)} chars: {first}"), file=sys.stderr)
 
             assistant_msg: Dict[str, Any] = {"role": "assistant"}
             if content:
@@ -287,12 +316,14 @@ class Agent:
                 self._pending_diffs = []
                 if self.self_review:
                     final += self._self_review_pass()
+                self._end_turn(turn_tools, turn_started, turn_reasoning)
                 return final
 
             for tc in tool_calls:
                 try:
                     interrupts.check_abort()
                 except interrupts.Aborted:
+                    self._end_turn(turn_tools, turn_started, turn_reasoning)
                     return "[aborted by user]"
                 tc_id = tc.get("id", "")
                 fn_name = tc.get("function", {}).get("name", "")
@@ -312,12 +343,23 @@ class Agent:
                     self._emit_hook("pre_tool", hook_context("task", args))
                     trace = SubagentTrace(name=args.get("task", "")[:20] or "task")
                     trace.start(args.get("task", ""))
-                    result = self.subagents.run_task(
-                        task=args.get("task", ""),
-                        system_prompt=args.get("system_prompt"),
-                        tools=args.get("tools"),
-                        model=args.get("model"),
-                    )
+                    turn_tools += 1
+                    if self.verbose and sys.stderr.isatty():
+                        from pycode.tui import Spinner
+                        with Spinner("running task"):
+                            result = self.subagents.run_task(
+                                task=args.get("task", ""),
+                                system_prompt=args.get("system_prompt"),
+                                tools=args.get("tools"),
+                                model=args.get("model"),
+                            )
+                    else:
+                        result = self.subagents.run_task(
+                            task=args.get("task", ""),
+                            system_prompt=args.get("system_prompt"),
+                            tools=args.get("tools"),
+                            model=args.get("model"),
+                        )
                     # parse the subagent summary for the trace end line
                     try:
                         summary = json.loads(result).get("result", result)
@@ -336,14 +378,34 @@ class Agent:
 
                 self.feed.begin(tc_id, fn_name, args)
                 self._emit_hook("pre_tool", hook_context(fn_name, args))
-                result = dispatch_tool(
-                    fn_name,
-                    args,
-                    confirm=self._confirm,
-                    auto_approve=self.auto_approve,
-                    dry_run=self.dry_run,
-                    mcp_registry=self.mcp,
+                # Live spinner while a tool runs — but never while a
+                # confirmation prompt is about to read stdin
+                from pycode.tools import is_destructive
+                needs_confirm = (
+                    self._confirm is not None and not self.auto_approve
+                    and is_destructive(fn_name, args)
                 )
+                turn_tools += 1
+                if self.verbose and sys.stderr.isatty() and not needs_confirm:
+                    from pycode.tui import Spinner
+                    with Spinner(f"running {fn_name}"):
+                        result = dispatch_tool(
+                            fn_name,
+                            args,
+                            confirm=self._confirm,
+                            auto_approve=self.auto_approve,
+                            dry_run=self.dry_run,
+                            mcp_registry=self.mcp,
+                        )
+                else:
+                    result = dispatch_tool(
+                        fn_name,
+                        args,
+                        confirm=self._confirm,
+                        auto_approve=self.auto_approve,
+                        dry_run=self.dry_run,
+                        mcp_registry=self.mcp,
+                    )
 
                 # Permission guard: apply the project policy
                 decision = self._permissions.check(fn_name, args)
@@ -393,6 +455,7 @@ class Agent:
                     "content": result,
                 })
 
+        self._end_turn(turn_tools, turn_started, turn_reasoning)
         return "[max iterations reached]"
 
     # ------------------------------------------------------------------

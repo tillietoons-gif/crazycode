@@ -92,23 +92,30 @@ _SPINNER_FRAMES = ["-", "\\", "|", "/", "+", "x"]
 
 
 class Spinner:
-    """Simple terminal spinner for long-running LLM calls."""
+    """Terminal spinner for long-running calls, with a live elapsed timer."""
 
-    def __init__(self, message: str = "thinking..."):
+    def __init__(self, message: str = "thinking"):
         self.message = message
         self._stop = False
         self._thread: Optional[object] = None
         self._enabled = sys.stderr.isatty()
+        self._started_at = 0.0
+        self._last_width = 0
 
     def _run(self) -> None:
         i = 0
+        self._started_at = time.time()
         while not self._stop:
+            elapsed = time.time() - self._started_at
             frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
-            print(f"\r{c('cyan', frame)} {self.message}", end="", file=sys.stderr, flush=True)
+            text = f"{c('cyan', frame)} {self.message} {dim(f'· {elapsed:4.1f}s')}"
+            pad = max(0, self._last_width - len(self.message) - 10)
+            print("\r" + text + " " * pad, end="", file=sys.stderr, flush=True)
+            self._last_width = len(self.message) + 12
             i += 1
             time.sleep(0.1)
         # clear the line
-        print("\r" + " " * (len(self.message) + 4), end="", file=sys.stderr, flush=True)
+        print("\r" + " " * (self._last_width + 4) + "\r", end="", file=sys.stderr, flush=True)
 
     def start(self) -> None:
         if not self._enabled:

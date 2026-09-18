@@ -26,6 +26,8 @@ from pycode.tui_inspector import inspector_report
 from pycode.tui_pager import paginate_or_print
 from pycode.session_export import export_to_html
 from pycode.tui_theme import apply_theme, available_themes, current_theme
+from pycode.tui_input import read_input
+from pycode.tui_turn import print_summary
 from pycode.onboarding import has_any_credential, onboarding_message, should_show_onboarding, mark_onboarded
 from pycode.wizard import needs_wizard
 
@@ -432,7 +434,7 @@ def main() -> None:
 
     while True:
         try:
-            user_input = input(">>> ")
+            user_input = read_input(use_box=args.use_tui)
         except (EOFError, KeyboardInterrupt):
             print("\nBye.", file=sys.stderr)
             break
@@ -731,6 +733,11 @@ def main() -> None:
             print_markdown(result, use_color=True)
         else:
             print(result, "\n")
+
+        # Turn summary panel: tool calls, duration, files changed
+        if args.use_tui and agent.last_turn:
+            print_summary(agent.last_turn)
+            print(file=sys.stderr)
 
         # Per-turn cost + live status bar when enabled
         if args.cost and agent.cost_tracker is not None:

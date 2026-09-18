@@ -10,13 +10,14 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  pycode · v1.1.0                                                     │
+│  pycode · v1.2.0                                                     │
 │                                                                      │
 │  15 tools · 5 provider presets · MCP plugins · subagents             │
 │  project symbol map · background jobs · hooks · themes               │
 │  SSE streaming · Esc-to-abort · self-review · auto-fix loop          │
+│  framed input · thinking indicator · turn panels                     │
 │  installers for Linux/macOS/Windows · setup wizard                   │
-│  288 passing tests                                                   │
+│  303 passing tests                                                   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,6 +101,15 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
   it explicitly, it may edit files unattended per your permissions policy.
 
 ### Terminal UX
+- **Framed input box** — `╭─ you ─╮ / │ ❯ / ╰─╯` around every prompt
+  (readline editing, history, and tab-completion all keep working).
+- **Thinking indicator** — animated spinner with a live elapsed timer while
+  the model responds (`✻ thinking · iter 1 · 2.4s`), plus a one-line
+  reasoning summary for thinking models.
+- **Live tool status** — `running bash · 1.1s` spinner per tool call
+  (never during a confirmation prompt).
+- **Turn summary panel** — after each turn: tool-call count, duration, and
+  edited files with `+add/−del` counts from git.
 - **ANSI markdown + code highlighter** (python/js/ts/go/rust/bash/json/sql).
 - **Live status bar** for context, cost, and model.
 - **Activity feed** with ✓/✗/→ glyphs and expandable detail.
@@ -423,7 +433,9 @@ src/pycode/
   tui*.py             terminal UI (markdown, status bar, feed, reviewer,
                        picker, context view, subagent trace, inspector, pager)
   tui_theme.py        named color themes
-tests/                unittest suite (288 tests across 14 modules)
+  tui_input.py        framed input box
+  tui_turn.py         turn summary panel (tools, duration, files changed)
+tests/                unittest suite (303 tests across 15 modules)
 docs/                 roadmap spec + release checklist
 .env.example          copy-pasteable configuration template
 .pycode/              project-level config, policies & auto-saved sessions
