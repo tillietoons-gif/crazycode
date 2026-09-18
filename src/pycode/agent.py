@@ -83,6 +83,7 @@ class Agent:
         system_prompt_extra: str = "",
         project_root: Optional[str] = None,
         auto_approve: bool = False,
+        always_yes: bool = False,
         dry_run: bool = False,
         max_iterations: int = 30,
         max_context_tokens: int = 60_000,
@@ -115,7 +116,8 @@ class Agent:
         self.max_context_tokens = max_context_tokens
         self.verbose = verbose
         self.project_root = project_root or os.getcwd()
-        self.auto_approve = auto_approve
+        self.auto_approve = auto_approve or always_yes
+        self.always_yes = always_yes or auto_approve
         self.dry_run = dry_run
         self.enable_subagents = enable_subagents
         self.allowed_tools = set(allowed_tools) if allowed_tools is not None else None

@@ -117,6 +117,10 @@ class TestDestructiveDetection(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_agent_always_yes_skips_confirm(self):
+        agent = Agent(api_key="k", verbose=False, always_yes=True)
+        self.assertTrue(agent.auto_approve)
+
 
 class TestLLMProvider(unittest.TestCase):
     def test_defaults(self):

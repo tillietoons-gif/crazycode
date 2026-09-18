@@ -241,8 +241,17 @@ Useful CLI flags:
 ```bash
 pycode --dry-run "refactor the auth module"
 pycode --auto-approve "run the test suite and fix failures"
+pycode --always-yes "apply the requested edits without prompting"
 pycode --yolo "upgrade dependencies"
 ```
+
+You can also persist the behavior in your project config:
+
+```toml
+always_yes = true
+```
+
+This disables the interactive approval prompt for destructive actions during local development.
 
 ---
 

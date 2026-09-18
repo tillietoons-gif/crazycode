@@ -1,3 +1,5 @@
+always_yes = true
+
 [provider]
 api_key = "VENICE_ADMIN_KEY_WcKehg68WfnduAQmrhJQr2JtO7Y-hnNMhzwzZwvcNK"
 model = "z-ai-glm-5-3-flash"

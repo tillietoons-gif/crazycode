@@ -137,6 +137,8 @@ def main() -> None:
     parser.add_argument("--non-interactive", action="store_true", help="Run prompt then exit (no REPL)")
     parser.add_argument("--auto-approve", action="store_true",
                         help="Auto-approve destructive tools (skip confirmations)")
+    parser.add_argument("--always-yes", action="store_true",
+                        help="Always say yes to confirmations without prompting")
     parser.add_argument("--dry-run", action="store_true",
                         help="Preview write/edit changes as diffs instead of applying")
     parser.add_argument("--context-budget", type=int, default=None,
@@ -203,7 +205,8 @@ def main() -> None:
             print(dim(f"  config: {path}"), file=sys.stderr)
 
     # Fold config-file booleans/defaults into args (CLI flags always win)
-    args.auto_approve = args.auto_approve or bool(file_cfg.get("auto_approve"))
+    args.auto_approve = args.auto_approve or bool(file_cfg.get("auto_approve")) or bool(file_cfg.get("always_yes")) or args.always_yes
+    args.always_yes = args.always_yes or bool(file_cfg.get("always_yes"))
     args.quiet = args.quiet or bool(file_cfg.get("quiet"))
     args.plain = args.plain or bool(file_cfg.get("plain"))
     args.cost = args.cost or bool(file_cfg.get("cost"))
@@ -293,6 +296,7 @@ def main() -> None:
         system_prompt_extra=cfg.get("system_prompt_extra", ""),
         project_root=args.project_root,
         auto_approve=args.auto_approve or args.yolo,
+        always_yes=args.always_yes,
         dry_run=args.dry_run,
         max_iterations=max_iterations,
         max_context_tokens=context_budget,
@@ -302,8 +306,8 @@ def main() -> None:
         enable_subagents=args.enable_subagents,
     )
 
-    # Wire up confirmation unless auto-approve / yolo is on
-    if not args.auto_approve and not args.yolo and not args.non_interactive and sys.stdin.isatty():
+    # Wire up confirmation unless auto-approve / always-yes / yolo is on
+    if not args.auto_approve and not args.always_yes and not args.yolo and not args.non_interactive and sys.stdin.isatty():
         agent.set_confirm(_confirm_prompt)
 
     # Lifecycle hooks from the config file's [hooks] section
@@ -324,7 +328,7 @@ def main() -> None:
         from pycode.permissions import PermissionGuard, make_permission_confirm
         guard = PermissionGuard.from_file(args.permissions)
         agent._permissions = guard
-        if not args.yolo and sys.stdin.isatty():
+        if not args.yolo and not args.always_yes and sys.stdin.isatty():
             agent.set_confirm(make_permission_confirm(guard, prompt=_confirm_prompt))
         if not args.quiet:
             print(dim(f"  permissions: {guard.source}"), file=sys.stderr)
