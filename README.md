@@ -17,7 +17,7 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 │  SSE streaming · Esc-to-abort · self-review · auto-fix loop          │
 │  framed input · thinking indicator · turn panels                     │
 │  installers for Linux/macOS/Windows · setup wizard                   │
-│  303 passing tests                                                   │
+│  313 passing tests                                                   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -436,7 +436,7 @@ src/pycode/
   tui_theme.py        named color themes
   tui_input.py        framed input box
   tui_turn.py         turn summary panel (tools, duration, files changed)
-tests/                unittest suite (305 tests across 15 modules)
+tests/                pytest suite (313 tests across multiple modules)
 docs/                 roadmap spec + release checklist
 .env.example          copy-pasteable configuration template
 .pycode/              project-level config, policies & auto-saved sessions
@@ -526,10 +526,10 @@ list).
 
 ```bash
 # run the test suite
-python -m unittest discover -s tests        # 157 tests
+PYTHONPATH=src pytest -q                     # 313 passing tests
 
 # run a single module's tests
-python -m unittest tests.test_v08
+PYTHONPATH=src pytest -q tests/test_v08.py
 
 # watch live
 python -m pytest -xvs 2>/dev/null || python -m unittest -v
@@ -542,4 +542,4 @@ to run.
 
 ## License
 
-MIT — see `LICENSE` (add if you have one).
+This repository does not currently include a LICENSE file, so licensing terms are not yet declared in the project root.
