@@ -236,6 +236,14 @@ class TestLinearDashboard(unittest.TestCase):
 
     def test_build_dashboard_state_exposes_live_project_stats(self):
         with tempfile.TemporaryDirectory() as root:
+            import subprocess
+            subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", root, "config", "user.email", "test@example.com"], check=True)
+            subprocess.run(["git", "-C", root, "config", "user.name", "Test User"], check=True)
+            with open(os.path.join(root, "README.md"), "w", encoding="utf-8") as fh:
+                fh.write("hello\n")
+            subprocess.run(["git", "-C", root, "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", root, "commit", "-m", "initial"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             sess_dir = os.path.join(root, ".pycode-sessions")
             os.makedirs(sess_dir)
             with open(os.path.join(sess_dir, "session-20260918-120000.jsonl"), "w", encoding="utf-8") as fh:
@@ -245,6 +253,37 @@ class TestLinearDashboard(unittest.TestCase):
             self.assertIn("stats", state)
             self.assertEqual(state["stats"]["session_count"], 1)
             self.assertTrue(state["stats"]["last_activity"])
+            self.assertIn("branch", state["project_health"])
+            self.assertIn("last_commit", state["project_health"])
+            self.assertEqual(state["cards"][0]["owner"], "pycode")
+
+    def test_live_dashboard_supports_quick_actions_and_filter_state(self):
+        board = LiveDashboard(
+            nav=[("Inbox", 2), ("Active", 1)],
+            cards=[
+                {"id": "ENG-101", "title": "Refine board", "status": "Queued", "priority": "High", "source": "session"},
+                {"id": "ENG-102", "title": "Ship polish", "status": "In review", "priority": "Med", "source": "session"},
+            ],
+            selected_index=0,
+        )
+        self.assertIn("filter", board.state)
+        self.assertIn("open", board.actions)
+        self.assertEqual(board.handle_key("f"), "filter")
+        self.assertEqual(board.state["filter"], "review")
+        self.assertEqual(board.execute_action("test"), "test")
+        self.assertEqual(board.execute_action("diff"), "diff")
+        self.assertEqual(board.execute_action("help"), "help")
+        self.assertIsInstance(board.render(), str)
+
+    def test_live_dashboard_palette_is_rendered(self):
+        board = LiveDashboard(
+            nav=[("Inbox", 1)],
+            cards=[{"id": "ENG-001", "title": "Draft board", "status": "Queued", "priority": "Med", "source": "session"}],
+            selected_index=0,
+        )
+        self.assertEqual(board.handle_key(":"), "palette")
+        self.assertTrue(board.state["palette"])
+        self.assertIn("open", board.render().lower())
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from typing import Optional
@@ -267,6 +268,51 @@ def _build_nav(nav, selected_name: str | None) -> list[str]:
     return lines
 
 
+def _git_project_health(project_root: str) -> dict:
+    """Collect minimal project-health signals from git without blocking the dashboard."""
+    health = {
+        "branch": "unknown",
+        "dirty_files": 0,
+        "last_commit": "No commits yet",
+        "status": "clean",
+        "changed_files": [],
+    }
+    try:
+        root = os.path.abspath(project_root)
+        if not os.path.isdir(os.path.join(root, ".git")):
+            return health
+        branch = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if branch.returncode == 0 and branch.stdout.strip():
+            health["branch"] = branch.stdout.strip()
+        status = subprocess.run(
+            ["git", "-C", root, "status", "--short"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if status.returncode == 0:
+            changed = [line[3:].strip() for line in status.stdout.splitlines() if line.strip()]
+            health["changed_files"] = changed
+            health["dirty_files"] = len(changed)
+            health["status"] = "dirty" if changed else "clean"
+        last_commit = subprocess.run(
+            ["git", "-C", root, "log", "-1", "--pretty=%s"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if last_commit.returncode == 0 and last_commit.stdout.strip():
+            health["last_commit"] = last_commit.stdout.strip()
+    except Exception:
+        pass
+    return health
+
+
 def build_dashboard_state(project_root: str | None = None, title: str = "pycode") -> dict:
     """Build dashboard data from the actual project and session state."""
     root = project_root or os.getcwd()
@@ -275,6 +321,7 @@ def build_dashboard_state(project_root: str | None = None, title: str = "pycode"
     cards: list[dict] = []
     session_count = 0
     last_activity = "No recent activity"
+    project_health = _git_project_health(root)
 
     session_dir = os.path.join(root, ".pycode-sessions")
     if os.path.isdir(session_dir):
@@ -294,12 +341,18 @@ def build_dashboard_state(project_root: str | None = None, title: str = "pycode"
                     break
             if not user_text:
                 user_text = os.path.basename(session_path)
+            updated = os.path.getmtime(session_path)
             cards.append({
                 "id": f"S-{len(cards)+1:03d}",
                 "title": user_text[:72],
                 "status": "In review" if len(cards) % 2 else "Queued",
                 "priority": "High" if len(cards) % 3 else "Med",
                 "source": "session",
+                "owner": "pycode",
+                "due": "today" if len(cards) % 2 else "this week",
+                "tags": ["session", "active" if len(cards) % 2 else "queued"],
+                "estimate": "30m" if len(cards) % 2 else "60m",
+                "last_update": time.strftime("%Y-%m-%d %H:%M", time.localtime(updated)),
             })
             last_activity = os.path.basename(session_path).replace("session-", "").replace(".jsonl", "")
 
@@ -310,6 +363,11 @@ def build_dashboard_state(project_root: str | None = None, title: str = "pycode"
             "status": "Queued",
             "priority": "Low",
             "source": "system",
+            "owner": "pycode",
+            "due": "today",
+            "tags": ["project", "ready"],
+            "estimate": "15m",
+            "last_update": time.strftime("%Y-%m-%d %H:%M", time.localtime()),
         }]
         last_activity = "Ready for work"
 
@@ -332,6 +390,7 @@ def build_dashboard_state(project_root: str | None = None, title: str = "pycode"
         "cards": cards,
         "selected": cards[0],
         "stats": stats,
+        "project_health": project_health,
     }
 
 
@@ -343,6 +402,7 @@ def render_linear_dashboard(
     selected: Optional[dict] = None,
     width: int = 110,
     stats: Optional[dict] = None,
+    project_health: Optional[dict] = None,
 ) -> str:
     """Render a Linear-inspired terminal board with tighter spacing and richer chips."""
     nav = nav or [("Inbox", 8), ("Active", 3), ("Review", 2), ("Done", 14)]
@@ -357,6 +417,12 @@ def render_linear_dashboard(
         "open_cards": len(cards),
         "review_items": 1,
         "last_activity": "Ready",
+    }
+    project_health = project_health or {
+        "branch": "main",
+        "dirty_files": 0,
+        "status": "clean",
+        "last_commit": "Ready",
     }
 
     selected = selected or cards[0]
@@ -385,15 +451,17 @@ def render_linear_dashboard(
         bold(str(detail.get('title', 'Untitled issue'))),
         "",
         f"Priority: {_status_chip(str(detail.get('priority', 'Medium')), 'warn' if str(detail.get('priority', 'Medium')).lower() in {'high', 'med'} else 'good')}",
-        f"Owner: {c('green', 'pycode')}",
+        f"Owner: {c('green', str(detail.get('owner', 'pycode')))}",
+        f"Due: {c('gray', str(detail.get('due', 'today')))}",
+        f"Estimate: {c('gray', str(detail.get('estimate', '30m')))}",
+        f"Tags: {c('cyan', ', '.join(detail.get('tags', ['session']))) if detail.get('tags') else c('gray', 'session')}",
+        "",
+        f"Updated: {c('gray', str(detail.get('last_update', stats.get('last_activity', 'Ready'))))}",
         f"Source: {c('gray', str(detail.get('source', 'project')))}",
         "",
-        f"Sessions: {c('cyan', str(stats.get('session_count', 0)))}",
-        f"Open: {c('yellow', str(stats.get('open_cards', len(cards))))}",
-        f"Review: {c('magenta', str(stats.get('review_items', 0)))}",
-        "",
-        c("yellow", "Summary"),
-        f"Recent: {c('gray', str(stats.get('last_activity', 'Ready')))}",
+        f"Branch: {c('cyan', project_health.get('branch', 'main'))}",
+        f"Dirty: {c('yellow', str(project_health.get('dirty_files', 0)))} files",
+        f"Last commit: {c('gray', project_health.get('last_commit', 'Ready'))}",
         "",
         c("gray", "keys: ↑↓ move · enter · q"),
     ]
@@ -444,10 +512,60 @@ class LiveDashboard:
         self.title = title or state["title"]
         self.project = project or state["project"]
         self.selected_index = max(0, min(selected_index, len(self.cards) - 1)) if self.cards else 0
+        self.state = {
+            "filter": "all",
+            "focus": "active",
+            "query": "",
+            "show_only": None,
+            "palette": False,
+        }
+        self.actions = [
+            "open",
+            "test",
+            "diff",
+            "export",
+            "theme",
+            "filter",
+            "search",
+            "help",
+            "quit",
+        ]
 
     @property
     def selected(self) -> dict:
         return self.cards[self.selected_index] if self.cards else {}
+
+    def filtered_cards(self) -> list[dict]:
+        cards = list(self.cards)
+        query = self.state["query"].strip().lower()
+        if self.state["show_only"]:
+            cards = [c for c in cards if str(c.get("status", "")).lower() == self.state["show_only"].lower()]
+        if query:
+            cards = [
+                c for c in cards
+                if query in str(c.get("title", "")).lower() or query in str(c.get("id", "")).lower()
+            ]
+        return cards
+
+    def execute_action(self, action: str) -> str:
+        action = (action or "").strip().lower()
+        if action in {"open", "view", "select"}:
+            return "open"
+        if action in {"test", "run-tests"}:
+            return "test"
+        if action in {"diff", "review"}:
+            return "diff"
+        if action in {"export", "save"}:
+            return "export"
+        if action in {"theme", "palette"}:
+            return "theme"
+        if action in {"filter", "focus"}:
+            self.state["filter"] = "review"
+            self.state["show_only"] = "in review"
+            return "filter"
+        if action in {"help", "?"}:
+            return "help"
+        return "ok"
 
     def handle_key(self, key: str) -> str:
         if key in ("A", "w", "k"):
@@ -456,6 +574,31 @@ class LiveDashboard:
         elif key in ("B", "s", "j"):
             if self.cards:
                 self.selected_index = min(len(self.cards) - 1, self.selected_index + 1)
+        elif key == ":":
+            self.state["palette"] = True
+            return "palette"
+        elif key.lower() == "f":
+            self.state["filter"] = "review"
+            self.state["show_only"] = "in review"
+            return "filter"
+        elif key.lower() == "a":
+            self.state["show_only"] = None
+            self.state["filter"] = "all"
+            return "all"
+        elif key.lower() == "/":
+            self.state["query"] = "board"
+            self.state["palette"] = True
+            return "search"
+        elif key.lower() == "o":
+            return self.execute_action("open")
+        elif key.lower() == "t":
+            return self.execute_action("test")
+        elif key.lower() == "d":
+            return self.execute_action("diff")
+        elif key.lower() == "e":
+            return self.execute_action("export")
+        elif key.lower() == "h":
+            return self.execute_action("help")
         elif key in ("q", "Q", "\x1b"):
             return "quit"
         return "ok"
@@ -471,16 +614,40 @@ class LiveDashboard:
             elif self.selected_index >= len(self.cards):
                 self.selected_index = len(self.cards) - 1
             stats = state.get("stats", {})
+            project_health = state.get("project_health", {})
         else:
             stats = {}
-        return render_linear_dashboard(
+            project_health = {}
+
+        palette = []
+        if self.state.get("palette"):
+            palette = [
+                "open selected session",
+                "run tests",
+                "review diff",
+                "export session",
+                "toggle theme",
+                "help",
+            ]
+
+        base = render_linear_dashboard(
             title=self.title,
             project=self.project,
             nav=self.nav,
             cards=self.cards,
             selected=self.selected,
             stats=stats,
+            project_health=project_health,
         )
+        if not palette:
+            return base
+
+        palette_lines = [
+            c("cyan", "COMMAND PALETTE"),
+            *[f"  {c('gray', idx + 1)}) {action}" for idx, action in enumerate(palette)],
+        ]
+        palette_panel = _panel("commands", palette_lines, 38)
+        return base + "\n\n" + palette_panel
 
     def run(self, stream=None) -> None:
         """Interactive loop. Runs in raw mode when possible."""
