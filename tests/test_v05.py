@@ -97,6 +97,46 @@ yolo = true
         self.assertTrue(confirm("read", {}))
 
 
+class TestAgentPermissionEnforcement(unittest.TestCase):
+    def test_denied_write_is_not_dispatched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "blocked.txt")
+            agent = Agent(api_key="k", verbose=False, project_root=directory, auto_approve=True)
+            agent._permissions = PermissionGuard(allow_tools=["read"])
+
+            class StubProvider:
+                def __init__(self):
+                    self.calls = 0
+
+                def chat_stream(self, messages, tools=None):
+                    self.calls += 1
+                    if self.calls == 1:
+                        return {
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "call_1",
+                                "function": {
+                                    "name": "write",
+                                    "arguments": json.dumps({"path": path, "content": "blocked"}),
+                                },
+                            }],
+                        }
+                    return {"content": "done", "tool_calls": []}
+
+            agent.provider = StubProvider()
+            self.assertEqual(agent.run("try a write"), "done")
+            self.assertFalse(os.path.exists(path))
+            self.assertIn("Permission denied", agent.messages[-2]["content"])
+
+    def test_task_is_not_available_by_default(self):
+        agent = Agent(api_key="k", verbose=False)
+        names = {schema["function"]["name"] for schema in agent._all_tool_schemas()}
+        self.assertNotIn("task", names)
+        agent.enable_subagents = True
+        names = {schema["function"]["name"] for schema in agent._all_tool_schemas()}
+        self.assertIn("task", names)
+
+
 # ---------------------------------------------------------------------------
 # Rewind / branching
 # ---------------------------------------------------------------------------
@@ -204,7 +244,8 @@ class TestSubagents(unittest.TestCase):
         self.assertEqual(sa.agent.provider.api_key, "k")
         self.assertEqual(sa.agent.provider.model, "m1")
         # child runs auto-approve (unattended)
-        self.assertTrue(sa.agent.auto_approve)
+        self.assertFalse(sa.agent.auto_approve)
+        self.assertEqual(sa.agent.allowed_tools, {"read", "glob", "grep", "symbols"})
 
     def test_subagent_result_returns_summary(self):
         parent = Agent(api_key="k")

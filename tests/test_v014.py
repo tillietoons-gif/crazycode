@@ -59,7 +59,8 @@ class TestNeedsWizard(unittest.TestCase):
     def test_skipped_when_already_done(self):
         mark = wizard_marker_path(self.home)
         os.makedirs(os.path.dirname(mark), exist_ok=True)
-        open(mark, "w").write("1")
+        with open(mark, "w", encoding="utf-8") as fh:
+            fh.write("1")
         self.assertTrue(wizard_done(self.home))
         self.assertFalse(needs_wizard(False, interactive=True, home=self.home))
 
@@ -90,7 +91,8 @@ class TestRunWizard(unittest.TestCase):
 
         # project config is writable -> wizard prefers it
         self.assertEqual(result["config_path"], project_config_path(self.root))
-        text = open(result["config_path"], encoding="utf-8").read()
+        with open(result["config_path"], encoding="utf-8") as fh:
+            text = fh.read()
         self.assertIn('[provider]', text)
         self.assertIn('api_key = "sk-wizard-key"', text)
         self.assertIn('api_base = "https://api.openai.com/v1"', text)
@@ -105,7 +107,8 @@ class TestRunWizard(unittest.TestCase):
         result = run_wizard(input_fn=fake, output_fn=out, root=self.root, home=self.home)
         self.assertEqual(result["provider"], "ollama")
         self.assertEqual(result["api_key"], "")
-        text = open(result["config_path"], encoding="utf-8").read()
+        with open(result["config_path"], encoding="utf-8") as fh:
+            text = fh.read()
         self.assertIn('api_base = "http://localhost:11434/v1"', text)
         self.assertNotIn("api_key", text)
 
@@ -134,7 +137,8 @@ class TestRunWizard(unittest.TestCase):
         run_wizard(input_fn=FakeInput(["1", "sk-new", ""]),
                    output_fn=out, root=self.root, home=self.home)
 
-        data = parse_toml(open(cfg_path, encoding="utf-8").read())
+        with open(cfg_path, encoding="utf-8") as fh:
+            data = parse_toml(fh.read())
         self.assertEqual(data["theme"], "nord")            # preserved
         self.assertEqual(data["provider"]["model"], "gpt-4o-mini")  # preserved
         self.assertEqual(data["provider"]["api_key"], "sk-new")     # added
@@ -142,7 +146,8 @@ class TestRunWizard(unittest.TestCase):
     def test_write_config_falls_back_to_user_home(self):
         # make the project dir read-only by pointing root at a file path
         bogus_root = os.path.join(self.root, "not-a-dir.txt")
-        open(bogus_root, "w").write("x")
+        with open(bogus_root, "w", encoding="utf-8") as fh:
+            fh.write("x")
         out, _ = collector()
         result = run_wizard(input_fn=FakeInput(["5", "sk-or", ""]),
                             output_fn=out, root=bogus_root, home=self.home)

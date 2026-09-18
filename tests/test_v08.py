@@ -110,7 +110,7 @@ class TestSubagentTrace(unittest.TestCase):
 
     def test_agent_records_subagent_trace(self):
         # A stubbed LLM that issues a task tool call should leave a trace.
-        agent = Agent(api_key="k", verbose=False)
+        agent = Agent(api_key="k", verbose=False, enable_subagents=True)
         class StubProvider:
             calls = 0
             def chat(self, messages, tools=None):

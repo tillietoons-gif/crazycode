@@ -34,7 +34,8 @@ class TestTools(unittest.TestCase):
 
             result = json.loads(dispatch_tool("write", {"path": path, "content": "rewritten"}))
             self.assertTrue(result["ok"])
-            self.assertEqual(open(path).read(), "rewritten")
+            with open(path, encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), "rewritten")
         finally:
             os.unlink(path)
 
@@ -49,7 +50,8 @@ class TestTools(unittest.TestCase):
                 "new_string": "return 2",
             }))
             self.assertTrue(result["ok"])
-            self.assertIn("return 2", open(path).read())
+            with open(path, encoding="utf-8") as fh:
+                self.assertIn("return 2", fh.read())
         finally:
             os.unlink(path)
 

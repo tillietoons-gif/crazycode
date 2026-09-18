@@ -6,7 +6,7 @@ Hooks are declared in the ``[hooks]`` section of a pycode config file::
     post_tool  = "black --quiet {path}"
     on_turn    = "echo turn done"
 
-Supported events: ``pre_tool``, ``post_tool``, ``on_turn``.
+Supported events: ``pre_tool``, ``post_tool``, ``tool_denied``, ``on_turn``.
 
 Placeholders available in command templates: ``{tool}``, ``{path}``,
 ``{args_json}``, ``{ok}``. A value may be a single command string or a list
@@ -21,7 +21,7 @@ import shlex
 import subprocess
 from typing import Any, Dict, List, Optional
 
-HOOK_EVENTS = ("pre_tool", "post_tool", "on_turn")
+HOOK_EVENTS = ("pre_tool", "post_tool", "tool_denied", "on_turn")
 _HOOK_TIMEOUT = 30
 
 

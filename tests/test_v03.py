@@ -109,7 +109,8 @@ class TestDryRunDiff(unittest.TestCase):
             self.assertIn("-line2", result["diff"])
             self.assertIn("+lineX", result["diff"])
             # original file untouched
-            self.assertEqual(open(p).read(), "line1\nline2\n")
+            with open(p, encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), "line1\nline2\n")
 
     def test_dry_run_edit(self):
         with tempfile.TemporaryDirectory() as d:
@@ -123,7 +124,8 @@ class TestDryRunDiff(unittest.TestCase):
             self.assertIn("-x = 1", result["diff"])
             self.assertIn("+x = 2", result["diff"])
             # file untouched
-            self.assertEqual(open(p).read(), "x = 1\n")
+            with open(p, encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), "x = 1\n")
 
     def test_compute_diff_no_change(self):
         self.assertEqual(compute_diff("a\n", "a\n"), "(no changes)")
@@ -171,10 +173,8 @@ class TestAgentDryRunAndMCP(unittest.TestCase):
         reg = MCPRegistry()
         agent.attach_mcp(reg)
         self.assertIs(agent.mcp, reg)
-        # schemas = built-in TOOL_SCHEMAS + the `task` subagent tool,
-        # plus any connected MCP tools (none here).
         from pycode.tools import TOOL_SCHEMAS
-        self.assertEqual(len(agent._all_tool_schemas()), len(TOOL_SCHEMAS) + 1)
+        self.assertEqual(len(agent._all_tool_schemas()), len(TOOL_SCHEMAS))
 
 
 if __name__ == "__main__":

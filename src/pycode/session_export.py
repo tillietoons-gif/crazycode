@@ -11,6 +11,7 @@ import html
 import json
 import time
 from typing import Any, Dict, List
+from pycode.tui import redact_text
 
 _ROLE_META = {
     "system": ("System", "#1f2937", "#f3f4f6"),
@@ -23,12 +24,12 @@ _ROLE_META = {
 def _escape_block(content: Any) -> str:
     """Return safe HTML for a message content (str or structured)."""
     if isinstance(content, str):
-        return html.escape(content).replace("\n", "<br>")
+        return html.escape(redact_text(content)).replace("\n", "<br>")
     try:
         pretty = json.dumps(content, ensure_ascii=False, indent=2, default=str)
-        return html.escape(pretty).replace("\n", "<br>")
+        return html.escape(redact_text(pretty)).replace("\n", "<br>")
     except Exception:  # noqa: BLE001
-        return html.escape(str(content))
+        return html.escape(redact_text(str(content)))
 
 
 def _tool_calls_block(tool_calls: List[Dict[str, Any]]) -> str:
@@ -41,6 +42,7 @@ def _tool_calls_block(tool_calls: List[Dict[str, Any]]) -> str:
             pretty = json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
         except json.JSONDecodeError:
             pretty = html.escape(raw)
+        pretty = redact_text(pretty)
         out.append(
             f'<details class="tc"><summary><span class="badge">{name}</span>'
             f'</summary><pre>{html.escape(pretty)}</pre></details>'
