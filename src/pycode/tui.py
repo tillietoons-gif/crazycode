@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import sys
 import time
 from typing import Optional
@@ -10,8 +12,8 @@ from typing import Optional
 # ANSI colors (no external deps)
 # ---------------------------------------------------------------------------
 
-if sys.stdout.isatty() and not sys.platform.startswith("win"):
-    _C = {
+_COLOR_NAMES = ["reset", "bold", "dim", "red", "green", "yellow", "blue", "magenta", "cyan", "gray"]
+_ANSI = {
         "reset": "\033[0m",
         "bold": "\033[1m",
         "dim": "\033[2m",
@@ -22,9 +24,33 @@ if sys.stdout.isatty() and not sys.platform.startswith("win"):
         "magenta": "\033[35m",
         "cyan": "\033[36m",
         "gray": "\033[90m",
-    }
-else:
-    _C = {k: "" for k in ["reset", "bold", "dim", "red", "green", "yellow", "blue", "magenta", "cyan", "gray"]}
+}
+_C = dict(_ANSI)
+
+
+def configure_colors(mode: str = "auto") -> str:
+    """Configure ANSI output for ``auto``, ``always``, or ``never``."""
+    if mode not in ("auto", "always", "never"):
+        raise ValueError(f"unknown color mode: {mode}")
+    enabled = mode == "always" or (
+        mode == "auto" and not os.getenv("NO_COLOR")
+        and (sys.stdout.isatty() or sys.stderr.isatty())
+    )
+    _C.update(_ANSI if enabled else {name: "" for name in _COLOR_NAMES})
+    return mode
+
+
+configure_colors()
+
+_SECRET_RE = re.compile(
+    r"(?i)(?:bearer\s+|sk-[a-z0-9_-]{8,}|gh[pousr]_[a-z0-9_-]{8,}|"
+    r"AKIA[0-9A-Z]{16}|(?:api[_-]?key|token|password)\s*[=:]\s*)[^\s,;\"']+"
+)
+
+
+def redact_text(text: str) -> str:
+    """Replace common credential formats before rendering or exporting text."""
+    return _SECRET_RE.sub("[REDACTED]", text)
 
 
 def colors_enabled() -> bool:
@@ -150,6 +176,14 @@ def print_tool_start(name: str, args_preview: str) -> None:
 
 def print_tool_result(name: str, ok: bool, preview: str) -> None:
     print(f"      {result_badge(ok)} {dim(preview[:200])}", file=sys.stderr, flush=True)
+
+
+def print_permission_denied(name: str, reason: str) -> None:
+    print(
+        f"      {c('red', 'DENIED')} {bold(name)} {dim('— ' + reason)}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def print_assistant(content: str) -> None:

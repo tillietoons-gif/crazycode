@@ -162,7 +162,9 @@ def main() -> None:
                         help="Disable cost accounting entirely")
     parser.add_argument("--plain", action="store_true",
                         help="Disable fancy TUI (markdown, status bar, feed, keyboard review) "
-                             "- plain text output only")
+                        "- plain text output only")
+    parser.add_argument("--color", choices=["auto", "always", "never"], default="auto",
+                        help="ANSI color mode (default: auto; honors NO_COLOR)")
     parser.add_argument("--theme", choices=available_themes(), default=None,
                         help="TUI color theme (overrides config file; default: default)")
     parser.add_argument("--no-config", action="store_true",
@@ -190,6 +192,9 @@ def main() -> None:
                         help="Show the first-run onboarding even if a key is present")
 
     args = parser.parse_args()
+
+    from pycode.tui import configure_colors
+    configure_colors(args.color)
 
     # Layered config: CLI > env > project config > user config > preset defaults
     file_cfg = {} if args.no_config else load_config(args.project_root)
@@ -294,6 +299,7 @@ def main() -> None:
         verbose=not args.quiet,
         use_project_map=not (args.no_map or bool(file_cfg.get("no_map"))),
         self_review=self_review,
+        enable_subagents=args.enable_subagents,
     )
 
     # Wire up confirmation unless auto-approve / yolo is on
@@ -712,10 +718,6 @@ def main() -> None:
             user_input = plugins.apply_command(user_commands[cmd_name]["template"], args_str)
             print(dim(f"  [{cmd_name}] prompt: {user_input[:120]}"), file=sys.stderr)
 
-        # Show the activity feed after each turn (TUI mode only)
-        if args.use_tui and agent.feed.entries:
-            print(dim(agent.feed.last_n(6)), file=sys.stderr)
-
         # Interactive keyboard diff review when in TUI + dry-run mode
         interactive_review = (
             args.dry_run and args.use_tui and sys.stdin.isatty() and not args.non_interactive
@@ -738,6 +740,10 @@ def main() -> None:
         if args.use_tui and agent.last_turn:
             print_summary(agent.last_turn)
             print(file=sys.stderr)
+
+        turn_feed = agent.turn_feed_entries()
+        if args.use_tui and turn_feed:
+            print(dim(agent.feed.render_entries(turn_feed)), file=sys.stderr)
 
         # Per-turn cost + live status bar when enabled
         if args.cost and agent.cost_tracker is not None:

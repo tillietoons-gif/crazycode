@@ -252,7 +252,7 @@ post_tool = "black --quiet {path}"   # format after every tool call
 on_turn   = "echo turn done"
 ```
 
-Events: `pre_tool`, `post_tool`, `on_turn`.
+Events: `pre_tool`, `post_tool`, `tool_denied`, `on_turn`.
 
 ### Plugins
 
@@ -363,6 +363,7 @@ Sessions
 Cost / TUI
   --cost / --no-cost
   --plain           Plain text output (disable all TUI)
+  --color MODE       ANSI colors: auto, always, or never
   --theme NAME      Color theme (default|mono|dracula|nord|solarized)
   --no-tab-complete
   --no-config       Ignore config.toml files
@@ -417,7 +418,7 @@ src/pycode/
   jobs.py             background job manager (bash_background / job_*)
   plugins.py          user tool SDK, custom slash commands, tool-file hooks
   hooks.py            pre_tool / post_tool / on_turn shell hooks
-  tools.py            the 14 tools + dispatch + destructive detection
+  tools.py            the 15 tools + dispatch + destructive detection
   permissions.py      .pycode/permissions.toml policy engine
   subagents.py        task-tool subagent dispatch
   rewind.py           checkpoint / branch manager
@@ -435,7 +436,7 @@ src/pycode/
   tui_theme.py        named color themes
   tui_input.py        framed input box
   tui_turn.py         turn summary panel (tools, duration, files changed)
-tests/                unittest suite (303 tests across 15 modules)
+tests/                unittest suite (305 tests across 15 modules)
 docs/                 roadmap spec + release checklist
 .env.example          copy-pasteable configuration template
 .pycode/              project-level config, policies & auto-saved sessions

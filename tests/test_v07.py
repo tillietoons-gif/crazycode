@@ -122,6 +122,15 @@ class TestActivityFeed(unittest.TestCase):
         e = f.entries[1]
         self.assertIn("exit 1", e.detail())
 
+    def test_failed_entry_includes_error_detail(self):
+        f = ActivityFeed(use_color=False)
+        f.begin("t1", "write", {"path": "blocked.txt"})
+        f.end(
+            "t1", "write", {"path": "blocked.txt"},
+            '{"error":"Permission denied: write is not allowed"}', ok=False,
+        )
+        self.assertIn("Permission denied", f.render_all())
+
     def test_dump(self):
         import json
         f = self._feed()

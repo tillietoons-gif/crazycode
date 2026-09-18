@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from pycode.tui import c, dim, tool_badge
+from pycode.tui import c, dim, redact_text, tool_badge
 
 _OK = "✓"
 _FAIL = "✗"
@@ -75,6 +75,14 @@ def _detail_edit(args: dict, result: str) -> str:
         return ""
 
 
+def _detail_error(args: dict, result: str) -> str:
+    try:
+        error = _json.loads(result).get("error", "")
+        return redact_text(str(error))[:120]
+    except Exception:
+        return redact_text(result.strip().replace("\n", " "))[:120]
+
+
 _DETAIL_FNS = {
     "bash": _detail_bash,
     "read": _detail_read,
@@ -99,9 +107,15 @@ class FeedEntry:
         return int((self.finished_at - self.started_at) * 1000)
 
     def detail(self) -> str:
+        if not self.ok:
+            error = _detail_error(self.args, self.result)
+            if error:
+                return error
         fn = _DETAIL_FNS.get(self.tool)
         if fn:
-            return fn(self.args, self.result)
+            detail = fn(self.args, self.result)
+            if detail:
+                return detail
         return ""
 
     def short_label(self) -> str:
@@ -179,7 +193,10 @@ class ActivityFeed:
         )
 
     def render_all(self) -> str:
-        return "\n".join(self.render_entry(e) for e in self.entries)
+        return self.render_entries(self.entries)
+
+    def render_entries(self, entries: List[FeedEntry]) -> str:
+        return "\n".join(self.render_entry(e) for e in entries)
 
     def last_n(self, n: int) -> str:
         return "\n".join(self.render_entry(e) for e in self.entries[-n:])

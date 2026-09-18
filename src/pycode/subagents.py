@@ -50,10 +50,12 @@ class Subagent:
             max_tokens=provider.max_tokens,
             system_prompt_extra=system_prompt or self._default_system_prompt(),
             project_root=parent.project_root,
-            auto_approve=True,  # subagents run unattended; parent gates writes
+            auto_approve=parent.auto_approve,
             dry_run=parent.dry_run,
             max_iterations=self._max_iterations,
             verbose=verbose,
+            enable_subagents=False,
+            allowed_tools=tools or ["read", "glob", "grep", "symbols"],
         )
         self.agent = Agent(**child_cfg)
         # Inherit permissions and MCP from the parent

@@ -89,6 +89,8 @@ class Agent:
         verbose: bool = True,
         use_project_map: bool = True,
         self_review: bool = False,
+        enable_subagents: bool = False,
+        allowed_tools: Optional[List[str]] = None,
     ):
         # Provider preset: if the user named a preset (openai/anthropic/ollama/venice/openrouter)
         # but didn't give an explicit base, fill from the preset.
@@ -115,6 +117,8 @@ class Agent:
         self.project_root = project_root or os.getcwd()
         self.auto_approve = auto_approve
         self.dry_run = dry_run
+        self.enable_subagents = enable_subagents
+        self.allowed_tools = set(allowed_tools) if allowed_tools is not None else None
         self.mcp = None  # set by CLI via attach_mcp()
         # _confirm is set by the CLI; returns False to decline a destructive tool
         self._confirm: Optional[Callable[[str, Dict[str, Any]], bool]] = None
@@ -206,9 +210,12 @@ class Agent:
 
     def _all_tool_schemas(self) -> List[Dict[str, Any]]:
         schemas = list(TOOL_SCHEMAS)
-        schemas.append(task_tool_schema())  # the `task` subagent tool
+        if self.enable_subagents:
+            schemas.append(task_tool_schema())
         if self.mcp is not None:
             schemas.extend(self.mcp.all_schemas())
+        if self.allowed_tools is not None:
+            schemas = [s for s in schemas if s.get("function", {}).get("name") in self.allowed_tools]
         return schemas
 
     # ------------------------------------------------------------------
@@ -249,6 +256,7 @@ class Agent:
         """
         self.messages.append({"role": "user", "content": user_input})
         self._touched: List[str] = []
+        self._turn_feed_start = len(self.feed.entries)
         turn_started = time.time()
         turn_tools = 0
         turn_reasoning = False
@@ -338,12 +346,36 @@ class Agent:
                     from pycode.tui import print_tool_start
                     print_tool_start(fn_name, json.dumps(args, default=str))
 
-                # Route the `task` subagent tool to the subagent registry
+                tool_allowed = ((fn_name != "task" or self.enable_subagents)
+                                and (self.allowed_tools is None or fn_name in self.allowed_tools))
+                decision = self._permissions.check(fn_name, args)
+                if not tool_allowed or not decision.allowed:
+                    reason = (f"tool '{fn_name}' is not available to this agent"
+                              if not tool_allowed else decision.reason)
+                    turn_tools += 1
+                    self.feed.begin(tc_id, fn_name, args)
+                    result = json.dumps({
+                        "error": f"Permission denied: {reason}",
+                        "tool": fn_name,
+                    }, ensure_ascii=False)
+                    self.feed.end(tc_id, fn_name, args, result, ok=False)
+                    self._emit_hook("tool_denied", hook_context(fn_name, args, ok=False))
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": result,
+                    })
+                    if self.verbose:
+                        from pycode.tui import print_permission_denied
+                        print_permission_denied(fn_name, reason)
+                    continue
+
                 if fn_name == "task":
+                    turn_tools += 1
+                    self.feed.begin(tc_id, fn_name, args)
                     self._emit_hook("pre_tool", hook_context("task", args))
                     trace = SubagentTrace(name=args.get("task", "")[:20] or "task")
                     trace.start(args.get("task", ""))
-                    turn_tools += 1
                     if self.verbose and sys.stderr.isatty():
                         from pycode.tui import Spinner
                         with Spinner("running task"):
@@ -406,25 +438,6 @@ class Agent:
                         dry_run=self.dry_run,
                         mcp_registry=self.mcp,
                     )
-
-                # Permission guard: apply the project policy
-                decision = self._permissions.check(fn_name, args)
-                if not decision.allowed and not self.auto_approve:
-                    result = json.dumps({
-                        "error": f"Permission denied: {decision.reason}",
-                        "tool": fn_name,
-                    }, ensure_ascii=False)
-                    self.feed.end(tc_id, fn_name, args, result, ok=False)
-                    # still record it so the LLM sees the denial
-                    self.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": result,
-                    })
-                    if self.verbose:
-                        from pycode.tui import print_tool_result
-                        print_tool_result(fn_name, False, f"denied: {decision.reason}")
-                    continue
 
                 # When dry_run is on, stage mutating changes for the reviewer
                 if self.dry_run and fn_name in ("write", "edit"):
@@ -744,6 +757,10 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
         if not self.subagent_traces:
             return ""
         return "\n\n".join(t.render(use_color=True) for t in self.subagent_traces)
+
+    def turn_feed_entries(self) -> List[Any]:
+        """Return activity entries recorded during the current turn."""
+        return self.feed.entries[getattr(self, "_turn_feed_start", 0):]
 
     # ------------------------------------------------------------------
     # Rewind / branching
