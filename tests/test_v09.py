@@ -207,6 +207,20 @@ class TestLinearDashboard(unittest.TestCase):
         self.assertIn("ENG-142", dashboard)
         self.assertIn("Refine terminal dashboard", dashboard)
 
+    def test_render_linear_dashboard_empty_state_has_no_demo_cards(self):
+        dashboard = render_linear_dashboard(
+            title="pycode",
+            project="crazycode",
+            nav=[("Inbox", 0), ("Active", 0), ("Review", 0)],
+            cards=[],
+            selected={},
+            stats={"session_count": 0, "open_cards": 0, "review_items": 0, "last_activity": "Ready"},
+            project_health={"branch": "main", "dirty_files": 0, "status": "clean", "last_commit": "Ready"},
+        )
+        self.assertIn("No active work", dashboard)
+        self.assertNotIn("Refine terminal dashboard", dashboard)
+        self.assertNotIn("ENG-142", dashboard)
+
     def test_live_dashboard_navigation_updates_selection(self):
         board = LiveDashboard(
             nav=[("Inbox", 8), ("Active", 3)],

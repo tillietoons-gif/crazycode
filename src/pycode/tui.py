@@ -406,16 +406,11 @@ def render_linear_dashboard(
 ) -> str:
     """Render a Linear-inspired terminal board with tighter spacing and richer chips."""
     nav = nav or [("Inbox", 8), ("Active", 3), ("Review", 2), ("Done", 14)]
-    cards = cards or [{
-        "id": "ENG-142",
-        "title": "Refine terminal dashboard",
-        "status": "In review",
-        "priority": "High",
-    }]
+    cards = cards or []
     stats = stats or {
         "session_count": 0,
         "open_cards": len(cards),
-        "review_items": 1,
+        "review_items": 0,
         "last_activity": "Ready",
     }
     project_health = project_health or {
@@ -424,6 +419,21 @@ def render_linear_dashboard(
         "status": "clean",
         "last_commit": "Ready",
     }
+
+    if not cards:
+        empty_card = {
+            "id": "SYS-000",
+            "title": "No active work",
+            "status": "Queued",
+            "priority": "Low",
+            "source": "system",
+            "owner": "pycode",
+            "due": "today",
+            "tags": ["ready"],
+            "estimate": "15m",
+            "last_update": time.strftime("%Y-%m-%d %H:%M", time.localtime()),
+        }
+        cards = [empty_card]
 
     selected = selected or cards[0]
     selected_name = "Active"
