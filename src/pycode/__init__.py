@@ -37,13 +37,14 @@ from pycode.tui_session_picker import pick_session, collect_sessions
 from pycode.tui_statusbar import update_status, build_status_line
 from pycode.tui_subagent_trace import SubagentTrace
 from pycode.tui_theme import apply_theme, available_themes, resolve_theme, THEMES
+from pycode.tui import render_linear_dashboard
 
 __all__ = [
     "Agent", "LLMProvider", "LLMProviderError", "build_cached_system_messages", "main", "TOOLS", "TOOL_SCHEMAS",
     "PRESETS", "get_preset", "detect_preset",
     "load_config", "parse_toml", "find_config_files", "project_config_path",
     "Aborted", "AbortController", "EscListener", "check_abort", "new_controller",
-    "apply_theme", "available_themes", "resolve_theme", "THEMES",
+    "apply_theme", "available_themes", "resolve_theme", "THEMES", "render_linear_dashboard",
     "JobManager", "HookRunner", "hook_context",
     "ProjectIndex", "extract_symbols",
     "load_user_tools", "load_user_commands", "register_user_tools", "apply_command",

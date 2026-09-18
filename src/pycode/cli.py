@@ -14,7 +14,7 @@ from pycode import interrupts
 from pycode.mcp import MCPRegistry
 from pycode.providers import PRESETS, get_preset, detect_preset
 from pycode.session import latest_session
-from pycode.tui import print_banner, c, bold, dim, result_badge
+from pycode.tui import print_banner, c, bold, dim, result_badge, render_linear_dashboard
 from pycode.tui_commands import install_completion, canonicalize, help_text
 from pycode.tui_markdown import print_markdown
 from pycode.tui_feed import ActivityFeed
@@ -384,7 +384,31 @@ def main() -> None:
         else:
             print("  Set PYCODE_API_KEY or --api-key, or use a preset with its env key.", file=sys.stderr)
 
-    print_banner()
+    if args.use_tui:
+        project_name = os.path.basename(os.path.abspath(args.project_root)) or "workspace"
+        print(
+            render_linear_dashboard(
+                title="pycode",
+                project=project_name,
+                nav=[("Inbox", 8), ("Active", 3), ("Review", 2), ("Done", 14)],
+                cards=[
+                    {"id": "ENG-142", "title": "Refine terminal dashboard", "status": "In review", "priority": "High"},
+                    {"id": "ENG-143", "title": "Polish status bar", "status": "In progress", "priority": "Med"},
+                    {"id": "ENG-144", "title": "Tune model prompts", "status": "Queued", "priority": "Low"},
+                ],
+                selected={
+                    "id": "ENG-142",
+                    "title": "Refine terminal dashboard",
+                    "status": "In review",
+                    "priority": "High",
+                },
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+        print(dim("  interactive mode · type /help for commands · /theme <name> to switch palettes"), file=sys.stderr, flush=True)
+    else:
+        print_banner()
     _print_config({k: v for k, v in cfg.items() if v})
 
     # Show loaded project context

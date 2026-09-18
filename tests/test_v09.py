@@ -4,6 +4,7 @@ and Esc-to-abort support."""
 from __future__ import annotations
 
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -41,6 +42,7 @@ from pycode.interrupts import (
     supports_esc,
 )
 from pycode.cli import _run_with_abort
+from pycode.tui import LiveDashboard, build_dashboard_state, render_linear_dashboard
 from pycode.tui_commands import canonicalize
 
 
@@ -186,6 +188,63 @@ class TestThemes(unittest.TestCase):
     def test_apply_without_force_on_non_tty_keeps_name(self):
         apply_theme("dracula")
         self.assertEqual(current_theme(), "dracula")
+
+
+class TestLinearDashboard(unittest.TestCase):
+    def test_render_linear_dashboard(self):
+        dashboard = render_linear_dashboard(
+            title="pycode",
+            project="crazycode",
+            nav=[("Inbox", 8), ("Active", 3), ("Review", 2)],
+            cards=[
+                {"id": "ENG-142", "title": "Refine terminal dashboard", "status": "In review", "priority": "High"},
+                {"id": "ENG-143", "title": "Polish status bar", "status": "In progress", "priority": "Med"},
+            ],
+            selected={"id": "ENG-142", "title": "Refine terminal dashboard", "status": "In review", "priority": "High"},
+        )
+        self.assertIn("pycode", dashboard)
+        self.assertIn("Active", dashboard)
+        self.assertIn("ENG-142", dashboard)
+        self.assertIn("Refine terminal dashboard", dashboard)
+
+    def test_live_dashboard_navigation_updates_selection(self):
+        board = LiveDashboard(
+            nav=[("Inbox", 8), ("Active", 3)],
+            cards=[
+                {"id": "ENG-142", "title": "Refine terminal dashboard", "status": "In review", "priority": "High"},
+                {"id": "ENG-143", "title": "Polish status bar", "status": "In progress", "priority": "Med"},
+            ],
+            selected_index=0,
+        )
+        self.assertEqual(board.selected_index, 0)
+        board.handle_key("B")
+        self.assertEqual(board.selected_index, 1)
+        board.handle_key("A")
+        self.assertEqual(board.selected_index, 0)
+
+    def test_build_dashboard_state_uses_project_sessions(self):
+        with tempfile.TemporaryDirectory() as root:
+            sess_dir = os.path.join(root, ".pycode-sessions")
+            os.makedirs(sess_dir)
+            with open(os.path.join(sess_dir, "session-20260918-120000.jsonl"), "w", encoding="utf-8") as fh:
+                fh.write(json.dumps({"role": "user", "content": "Refactor the dashboard"}) + "\n")
+                fh.write(json.dumps({"role": "assistant", "content": "Done"}) + "\n")
+            state = build_dashboard_state(root)
+            self.assertTrue(state["cards"])
+            self.assertIn("Refactor the dashboard", state["cards"][0]["title"])
+            self.assertEqual(state["nav"][0][0], "Inbox")
+
+    def test_build_dashboard_state_exposes_live_project_stats(self):
+        with tempfile.TemporaryDirectory() as root:
+            sess_dir = os.path.join(root, ".pycode-sessions")
+            os.makedirs(sess_dir)
+            with open(os.path.join(sess_dir, "session-20260918-120000.jsonl"), "w", encoding="utf-8") as fh:
+                fh.write(json.dumps({"role": "user", "content": "Refactor the dashboard"}) + "\n")
+                fh.write(json.dumps({"role": "assistant", "content": "Working on it"}) + "\n")
+            state = build_dashboard_state(root)
+            self.assertIn("stats", state)
+            self.assertEqual(state["stats"]["session_count"], 1)
+            self.assertTrue(state["stats"]["last_activity"])
 
 
 # ---------------------------------------------------------------------------
