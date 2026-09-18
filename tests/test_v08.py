@@ -7,21 +7,23 @@ import os
 import tempfile
 import unittest
 
-from pycode.tui_session_picker import collect_sessions, SessionMeta, _preview, _text_pick
-from pycode.tui_context_view import context_bar, render_context_view
-from pycode.tui_subagent_trace import SubagentTrace
-from pycode.tui_inspector import inspector_report, provider_status, permission_status, mcp_status
-from pycode.tui_pager import _page, paginate_or_print
-from pycode.session_export import export_to_html
-from pycode.onboarding import has_any_credential, onboarding_message
 from pycode.agent import Agent
-from pycode.permissions import PermissionGuard
 from pycode.mcp import MCPRegistry
-
+from pycode.onboarding import has_any_credential, onboarding_message
+from pycode.permissions import PermissionGuard
+from pycode.session_export import export_to_html
+from pycode.tui_context_view import context_bar, render_context_view
+from pycode.tui_inspector import (inspector_report, mcp_status,
+                                  permission_status, provider_status)
+from pycode.tui_pager import _page, paginate_or_print
+from pycode.tui_session_picker import (SessionMeta, _preview, _text_pick,
+                                       collect_sessions)
+from pycode.tui_subagent_trace import SubagentTrace
 
 # ---------------------------------------------------------------------------
 # Session picker
 # ---------------------------------------------------------------------------
+
 
 class TestSessionPicker(unittest.TestCase):
     def test_collect_sessions_empty(self):
@@ -30,6 +32,7 @@ class TestSessionPicker(unittest.TestCase):
 
     def test_collect_sessions_finds_saved(self):
         from pycode.session import save_session
+
         with tempfile.TemporaryDirectory() as d:
             save_session([{"role": "user", "content": "hi"}], root=d)
             items = collect_sessions(d)
@@ -38,15 +41,20 @@ class TestSessionPicker(unittest.TestCase):
             self.assertGreaterEqual(items[0].msg_count, 1)
 
     def test_preview_uses_first_user(self):
-        preview = _preview([{"role": "system", "content": "s"},
-                            {"role": "user", "content": "   hello   world "},
-                            {"role": "assistant", "content": "a"}])
+        preview = _preview(
+            [
+                {"role": "system", "content": "s"},
+                {"role": "user", "content": "   hello   world "},
+                {"role": "assistant", "content": "a"},
+            ]
+        )
         # _preview normalizes whitespace (collapses runs of spaces to one)
         self.assertEqual(preview, "hello world")
 
     def test_session_meta_timestamp(self):
-        m = SessionMeta(path="/x/session-20260914-103045.jsonl", mtime=0,
-                        msg_count=2, preview="hi")
+        m = SessionMeta(
+            path="/x/session-20260914-103045.jsonl", mtime=0, msg_count=2, preview="hi"
+        )
         self.assertIn("2026-09-14", m.timestamp_str())
         self.assertIn("10:30:45", m.timestamp_str())
 
@@ -54,6 +62,7 @@ class TestSessionPicker(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Context view
 # ---------------------------------------------------------------------------
+
 
 class TestContextView(unittest.TestCase):
     def test_bar_fully_used(self):
@@ -78,6 +87,7 @@ class TestContextView(unittest.TestCase):
 # Subagent trace
 # ---------------------------------------------------------------------------
 
+
 class TestSubagentTrace(unittest.TestCase):
     def _trace(self):
         t = SubagentTrace("task")
@@ -99,6 +109,7 @@ class TestSubagentTrace(unittest.TestCase):
 
     def test_dump(self):
         import json
+
         t = self._trace()
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "trace.jsonl")
@@ -111,19 +122,33 @@ class TestSubagentTrace(unittest.TestCase):
     def test_agent_records_subagent_trace(self):
         # A stubbed LLM that issues a task tool call should leave a trace.
         agent = Agent(api_key="k", verbose=False, enable_subagents=True)
+
         class StubProvider:
             calls = 0
+
             def chat(self, messages, tools=None):
                 StubProvider.calls += 1
                 if StubProvider.calls == 1:
-                    return {"content": "", "tool_calls": [{
-                        "id": "t1", "type": "function",
-                        "function": {"name": "task",
-                                     "arguments": '{"task": "explore the module"}'}}]}
+                    return {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "t1",
+                                "type": "function",
+                                "function": {
+                                    "name": "task",
+                                    "arguments": '{"task": "explore the module"}',
+                                },
+                            }
+                        ],
+                    }
                 return {"content": "done", "tool_calls": []}
+
             def chat_stream(self, messages, tools=None):
                 from pycode.provider import LLMProviderError
+
                 raise LLMProviderError("no stream")
+
         agent.provider = StubProvider()
         # stub the subagent registry's run_task to avoid spawning a real child
         agent.subagents.run_task = lambda **kw: '{"subagent":"task","result":"summary"}'
@@ -140,6 +165,7 @@ class TestSubagentTrace(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Config inspector
 # ---------------------------------------------------------------------------
+
 
 class TestInspector(unittest.TestCase):
     def test_provider_status_single(self):
@@ -176,6 +202,7 @@ class TestInspector(unittest.TestCase):
 # Log pager
 # ---------------------------------------------------------------------------
 
+
 class TestPager(unittest.TestCase):
     def test_page_math(self):
         lines = list(range(50))
@@ -185,6 +212,7 @@ class TestPager(unittest.TestCase):
     def test_paginate_or_print_short(self):
         import io
         from contextlib import redirect_stdout
+
         buf = io.StringIO()
         with redirect_stdout(buf):
             paginate_or_print("line1\nline2", page_size=10)
@@ -194,6 +222,7 @@ class TestPager(unittest.TestCase):
         # On non-TTY, paginate_or_print just prints everything
         import io
         from unittest.mock import patch
+
         buf = io.StringIO()
         long_text = "\n".join(f"l{i}" for i in range(100))
         with patch("sys.stdout.isatty", return_value=False):
@@ -207,14 +236,22 @@ class TestPager(unittest.TestCase):
 # HTML export
 # ---------------------------------------------------------------------------
 
+
 class TestHtmlExport(unittest.TestCase):
     def _msgs(self):
         return [
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "hi there"},
-            {"role": "assistant", "content": "hello",
-             "tool_calls": [{"id": "x", "function": {"name": "read",
-                                                     "arguments": '{"path":"f.py"}'}}]},
+            {
+                "role": "assistant",
+                "content": "hello",
+                "tool_calls": [
+                    {
+                        "id": "x",
+                        "function": {"name": "read", "arguments": '{"path":"f.py"}'},
+                    }
+                ],
+            },
             {"role": "tool", "tool_call_id": "x", "content": "l1\nl2"},
         ]
 
@@ -236,7 +273,9 @@ class TestHtmlExport(unittest.TestCase):
     def test_export_escaping(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "x.html")
-            export_to_html([{"role": "user", "content": "<script>alert(1)</script>"}], p)
+            export_to_html(
+                [{"role": "user", "content": "<script>alert(1)</script>"}], p
+            )
             with open(p) as fh:
                 html = fh.read()
             # must be escaped, no raw <script>
@@ -248,6 +287,7 @@ class TestHtmlExport(unittest.TestCase):
 # Onboarding
 # ---------------------------------------------------------------------------
 
+
 class TestOnboarding(unittest.TestCase):
     def test_onboarding_message_mentions_options(self):
         msg = onboarding_message()
@@ -256,6 +296,7 @@ class TestOnboarding(unittest.TestCase):
 
     def test_has_any_credential_detects_env(self):
         from unittest.mock import patch
+
         with patch.dict(os.environ, {"PYCODE_API_KEY": "sk-test"}, clear=True):
             self.assertTrue(has_any_credential())
         with patch.dict(os.environ, {}, clear=True):

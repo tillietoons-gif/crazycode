@@ -62,7 +62,11 @@ def render_context_view(
     return "\n".join(lines)
 
 
-def print_context(used: int, budget: int, message_count: int,
-                  use_color: bool = True) -> None:
-    print(render_context_view(used, budget, message_count, use_color=use_color),
-          file=sys.stderr, flush=True)
+def print_context(
+    used: int, budget: int, message_count: int, use_color: bool = True
+) -> None:
+    print(
+        render_context_view(used, budget, message_count, use_color=use_color),
+        file=sys.stderr,
+        flush=True,
+    )

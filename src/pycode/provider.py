@@ -38,8 +38,17 @@ class LLMProvider:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ):
-        self.api_key = api_key or os.getenv("PYCODE_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
-        self.api_base = (api_base or os.getenv("PYCODE_API_BASE", "") or os.getenv("OPENAI_API_BASE", "") or "https://api.venice.ai/api/v1").rstrip("/")
+        self.api_key = (
+            api_key
+            or os.getenv("PYCODE_API_KEY", "")
+            or os.getenv("OPENAI_API_KEY", "")
+        )
+        self.api_base = (
+            api_base
+            or os.getenv("PYCODE_API_BASE", "")
+            or os.getenv("OPENAI_API_BASE", "")
+            or "https://api.venice.ai/api/v1"
+        ).rstrip("/")
         self.model = model or os.getenv("PYCODE_MODEL", "deepseek-v4-1-flash")
         self.temperature = temperature if temperature is not None else 0.3
         self.max_tokens = max_tokens or 8192
@@ -85,24 +94,38 @@ class LLMProvider:
         }
 
         try:
-            with requests.post(url, headers=headers, json=payload, timeout=120, stream=True) as resp:
+            with requests.post(
+                url, headers=headers, json=payload, timeout=120, stream=True
+            ) as resp:
                 if resp.status_code >= 400:
-                    raise LLMProviderError(f"LLM API {resp.status_code}: {resp.text[:400]}")
-                content, tool_calls, usage, reasoning = self._consume_sse(resp, on_delta, on_reasoning)
+                    raise LLMProviderError(
+                        f"LLM API {resp.status_code}: {resp.text[:400]}"
+                    )
+                content, tool_calls, usage, reasoning = self._consume_sse(
+                    resp, on_delta, on_reasoning
+                )
                 # An empty stream means the server ignored stream=True and
                 # answered with a plain JSON body - retry without streaming.
                 if not content and not tool_calls and usage is None:
                     return self._chat_nonstream(messages, tools)
                 self.last_usage = usage or {}
-                return {"content": content, "tool_calls": tool_calls,
-                        "usage": self.last_usage, "reasoning": reasoning}
+                return {
+                    "content": content,
+                    "tool_calls": tool_calls,
+                    "usage": self.last_usage,
+                    "reasoning": reasoning,
+                }
         except LLMProviderError:
             raise
         except Exception:  # noqa: BLE001 - stream failed; fall back below
             return self._chat_nonstream(messages, tools)
 
-    def _consume_sse(self, resp: Any, on_delta: Optional[Any] = None,
-                     on_reasoning: Optional[Any] = None):
+    def _consume_sse(
+        self,
+        resp: Any,
+        on_delta: Optional[Any] = None,
+        on_reasoning: Optional[Any] = None,
+    ):
         """Parse an OpenAI-style SSE body into (content, tool_calls, usage, reasoning)."""
         content_parts: List[str] = []
         reasoning_parts: List[str] = []
@@ -116,7 +139,7 @@ class LLMProvider:
                 continue
             if not line.startswith("data:"):
                 continue
-            data = line[len("data:"):].strip()
+            data = line[len("data:") :].strip()
             if data == "[DONE]":
                 break
             try:
@@ -156,7 +179,10 @@ class LLMProvider:
             {
                 "id": slots[i]["id"] or f"call_{i}",
                 "type": "function",
-                "function": {"name": slots[i]["name"], "arguments": slots[i]["arguments"] or "{}"},
+                "function": {
+                    "name": slots[i]["name"],
+                    "arguments": slots[i]["arguments"] or "{}",
+                },
             }
             for i in sorted(slots)
         ]
@@ -198,14 +224,16 @@ class LLMProvider:
 
         tool_calls = []
         for tc in tool_calls_raw:
-            tool_calls.append({
-                "id": tc.get("id", ""),
-                "type": tc.get("type", "function"),
-                "function": {
-                    "name": tc.get("function", {}).get("name", ""),
-                    "arguments": tc.get("function", {}).get("arguments", "{}"),
-                },
-            })
+            tool_calls.append(
+                {
+                    "id": tc.get("id", ""),
+                    "type": tc.get("type", "function"),
+                    "function": {
+                        "name": tc.get("function", {}).get("name", ""),
+                        "arguments": tc.get("function", {}).get("arguments", "{}"),
+                    },
+                }
+            )
 
         # Record token usage for cost tracking
         self.last_usage = data.get("usage") or {}
@@ -225,6 +253,7 @@ class LLMProvider:
 # ---------------------------------------------------------------------------
 # Prompt caching
 # ---------------------------------------------------------------------------
+
 
 def build_cached_system_messages(
     system_content: str,

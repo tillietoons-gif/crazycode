@@ -8,9 +8,9 @@ import sys
 import tempfile
 import unittest
 
-from pycode.tools import TOOLS, TOOL_SCHEMAS, dispatch_tool
 from pycode.agent import Agent
 from pycode.provider import LLMProvider
+from pycode.tools import TOOL_SCHEMAS, TOOLS, dispatch_tool
 
 # Repo root derived from this file's location, so tests pass from any checkout
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,7 +32,9 @@ class TestTools(unittest.TestCase):
             self.assertIn("line2", content)
             self.assertNotIn("line3", content)
 
-            result = json.loads(dispatch_tool("write", {"path": path, "content": "rewritten"}))
+            result = json.loads(
+                dispatch_tool("write", {"path": path, "content": "rewritten"})
+            )
             self.assertTrue(result["ok"])
             with open(path, encoding="utf-8") as fh:
                 self.assertEqual(fh.read(), "rewritten")
@@ -44,11 +46,16 @@ class TestTools(unittest.TestCase):
             f.write("def foo():\n    return 1\n")
             path = f.name
         try:
-            result = json.loads(dispatch_tool("edit", {
-                "path": path,
-                "old_string": "return 1",
-                "new_string": "return 2",
-            }))
+            result = json.loads(
+                dispatch_tool(
+                    "edit",
+                    {
+                        "path": path,
+                        "old_string": "return 1",
+                        "new_string": "return 2",
+                    },
+                )
+            )
             self.assertTrue(result["ok"])
             with open(path, encoding="utf-8") as fh:
                 self.assertIn("return 2", fh.read())
@@ -57,24 +64,37 @@ class TestTools(unittest.TestCase):
 
     def test_glob(self):
         results = dispatch_tool("glob", {"pattern": "src/**/*.py", "path": REPO_ROOT})
-        self.assertIn(os.path.join(REPO_ROOT, "src", "pycode", "agent.py"),
-                      json.loads(results))
+        self.assertIn(
+            os.path.join(REPO_ROOT, "src", "pycode", "agent.py"), json.loads(results)
+        )
 
     def test_grep(self):
-        results = json.loads(dispatch_tool("grep", {
-            "pattern": "import",
-            "path": os.path.join(REPO_ROOT, "src"),
-            "include": "*.py",
-            "max_results": 5,
-        }))
+        results = json.loads(
+            dispatch_tool(
+                "grep",
+                {
+                    "pattern": "import",
+                    "path": os.path.join(REPO_ROOT, "src"),
+                    "include": "*.py",
+                    "max_results": 5,
+                },
+            )
+        )
         self.assertGreater(len(results), 0)
         self.assertIn("import", results[0]["text"])
 
     def test_todo(self):
         dispatch_tool("todo", {"clear": True})
-        result = json.loads(dispatch_tool("todo", {
-            "add": [{"content": "task1", "status": "pending", "priority": "high"}]
-        }))
+        result = json.loads(
+            dispatch_tool(
+                "todo",
+                {
+                    "add": [
+                        {"content": "task1", "status": "pending", "priority": "high"}
+                    ]
+                },
+            )
+        )
         self.assertEqual(len(result["todos"]), 1)
 
 
@@ -86,7 +106,9 @@ class TestProvider(unittest.TestCase):
         self.assertIsInstance(p.max_tokens, int)
 
     def test_init_custom(self):
-        p = LLMProvider(api_key="k", api_base="http://localhost:8080", model="test-model")
+        p = LLMProvider(
+            api_key="k", api_base="http://localhost:8080", model="test-model"
+        )
         self.assertEqual(p.api_base, "http://localhost:8080")
         self.assertEqual(p.model, "test-model")
 
@@ -118,10 +140,26 @@ class TestSchemas(unittest.TestCase):
 
     def test_schema_names(self):
         names = {s["function"]["name"] for s in TOOL_SCHEMAS}
-        self.assertEqual(names, {"bash", "read", "write", "edit", "glob", "grep",
-                                 "webfetch", "web_search", "view_image", "todo",
-                                 "bash_background", "job_output", "job_list", "job_kill",
-                                 "symbols"})
+        self.assertEqual(
+            names,
+            {
+                "bash",
+                "read",
+                "write",
+                "edit",
+                "glob",
+                "grep",
+                "webfetch",
+                "web_search",
+                "view_image",
+                "todo",
+                "bash_background",
+                "job_output",
+                "job_list",
+                "job_kill",
+                "symbols",
+            },
+        )
 
     def test_all_tools_registered(self):
         for s in TOOL_SCHEMAS:

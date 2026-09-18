@@ -8,19 +8,15 @@ import os
 import tempfile
 import unittest
 
-from pycode import plugins, tools as tools_mod
+from pycode import plugins
+from pycode import tools as tools_mod
 from pycode.hooks import HookRunner
+from pycode.plugins import (apply_command, collect_user_hooks,
+                            load_user_commands, load_user_tools, merge_hooks,
+                            register_user_tools)
 from pycode.tui_commands import USER_COMMANDS, _complete
-from pycode.plugins import (
-    apply_command,
-    collect_user_hooks,
-    load_user_commands,
-    load_user_tools,
-    merge_hooks,
-    register_user_tools,
-)
 
-ECHO_TOOL = '''
+ECHO_TOOL = """
 SCHEMA = {
     "type": "function",
     "function": {
@@ -36,9 +32,9 @@ SCHEMA = {
 
 def run(args):
     return {"ok": True, "echo": args.get("msg", "")}
-'''
+"""
 
-DESTRUCTIVE_TOOL = '''
+DESTRUCTIVE_TOOL = """
 SCHEMA = {
     "type": "function",
     "function": {
@@ -51,9 +47,9 @@ DESTRUCTIVE = True
 
 def run(args):
     return {"ok": True}
-'''
+"""
 
-HOOKED_TOOL = '''
+HOOKED_TOOL = """
 SCHEMA = {
     "type": "function",
     "function": {"name": "hooked", "description": "x", "parameters": {"type": "object"}},
@@ -62,19 +58,19 @@ HOOKS = {"post_tool": ["echo post"], "bogus": ["nope"], "on_turn": ["echo turn"]
 
 def run(args):
     return {"ok": True}
-'''
+"""
 
 BROKEN_TOOL = 'raise RuntimeError("boom at import")\n'
 
-BASH_COLLISION = '''
+BASH_COLLISION = """
 SCHEMA = {"type": "function", "function": {"name": "bash", "description": "x", "parameters": {"type": "object"}}}
 def run(args):
     return {"ok": True}
-'''
+"""
 
-MISSING_RUN = '''
+MISSING_RUN = """
 SCHEMA = {"type": "function", "function": {"name": "ghost", "description": "x", "parameters": {"type": "object"}}}
-'''
+"""
 
 
 class PluginSandbox(unittest.TestCase):
@@ -133,7 +129,9 @@ class TestUserTools(PluginSandbox):
         self.assertEqual(len(summary["errors"]), 1)
         self.assertIn("collides", summary["errors"][0]["error"])
         # the built-in bash is untouched
-        self.assertIn("shell", tools_mod.TOOL_SCHEMAS[0]["function"]["description"].lower())
+        self.assertIn(
+            "shell", tools_mod.TOOL_SCHEMAS[0]["function"]["description"].lower()
+        )
 
     def test_broken_plugin_reported(self):
         self.write_tool("broken.py", BROKEN_TOOL)
@@ -172,15 +170,18 @@ class TestUserCommands(PluginSandbox):
         self.assertEqual(cmds["review"]["template"], "Please review $ARGS carefully.")
 
     def test_apply_command(self):
-        self.assertEqual(apply_command("do $ARGS twice, yes $ARGS", "x"),
-                         "do x twice, yes x")
+        self.assertEqual(
+            apply_command("do $ARGS twice, yes $ARGS", "x"), "do x twice, yes x"
+        )
         self.assertEqual(apply_command("braced ${ARGS}", "y"), "braced y")
         self.assertEqual(apply_command("no placeholder", "z"), "no placeholder")
 
     def test_apply_keeps_shell_vars(self):
         # other $ vars are untouched
-        self.assertEqual(apply_command("export PATH=$PATH and $ARGS", "here"),
-                         "export PATH=$PATH and here")
+        self.assertEqual(
+            apply_command("export PATH=$PATH and $ARGS", "here"),
+            "export PATH=$PATH and here",
+        )
 
     def test_completion_includes_user_commands(self):
         USER_COMMANDS.add("/review")

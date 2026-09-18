@@ -18,7 +18,11 @@ def session_dir(root: Optional[str] = None) -> Path:
     return d
 
 
-def save_session(messages: List[Dict[str, Any]], path: Optional[str] = None, root: Optional[str] = None) -> str:
+def save_session(
+    messages: List[Dict[str, Any]],
+    path: Optional[str] = None,
+    root: Optional[str] = None,
+) -> str:
     """Save a message list to a JSONL file. Returns the file path."""
     if path is None:
         ts = time.strftime("%Y%m%d-%H%M%S")

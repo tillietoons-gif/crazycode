@@ -9,41 +9,20 @@ import os
 import tempfile
 import unittest
 
-from pycode import tui
-from pycode import interrupts
-from pycode.config import (
-    minimal_toml,
-    parse_toml,
-    load_config,
-    find_config_files,
-    project_config_path,
-    coalesce,
-    _flatten,
-    _strip_comment,
-)
-from pycode.tui_theme import (
-    THEMES,
-    available_themes,
-    apply_theme,
-    current_theme,
-    get_theme,
-    resolve_theme,
-    theme_swatch,
-)
-from pycode.interrupts import (
-    Aborted,
-    AbortController,
-    EscListener,
-    check_abort,
-    clear_current,
-    get_current,
-    new_controller,
-    set_current,
-    supports_esc,
-)
+from pycode import interrupts, tui
 from pycode.cli import _run_with_abort
-from pycode.tui import LiveDashboard, build_dashboard_state, render_linear_dashboard
+from pycode.config import (_flatten, _strip_comment, coalesce,
+                           find_config_files, load_config, minimal_toml,
+                           parse_toml, project_config_path)
+from pycode.interrupts import (AbortController, Aborted, EscListener,
+                               check_abort, clear_current, get_current,
+                               new_controller, set_current, supports_esc)
+from pycode.tui import (LiveDashboard, build_dashboard_state,
+                        render_linear_dashboard)
 from pycode.tui_commands import canonicalize
+from pycode.tui_theme import (THEMES, apply_theme, available_themes,
+                              current_theme, get_theme, resolve_theme,
+                              theme_swatch)
 
 
 class TestCanonicalizeCommands(unittest.TestCase):
@@ -57,6 +36,7 @@ class TestCanonicalizeCommands(unittest.TestCase):
 
     def test_theme_command_registered(self):
         from pycode.tui_commands import COMMANDS
+
         self.assertIn("/theme", COMMANDS)
 
 
@@ -64,11 +44,12 @@ class TestCanonicalizeCommands(unittest.TestCase):
 # Config parsing
 # ---------------------------------------------------------------------------
 
+
 class TestMinimalToml(unittest.TestCase):
     def test_scalars_and_sections(self):
         text = (
             "# a comment\n"
-            "theme = \"nord\"\n"
+            'theme = "nord"\n'
             "auto_approve = true\n"
             "context_budget = 80000\n"
             "max_iterations = 12\n"
@@ -85,7 +66,7 @@ class TestMinimalToml(unittest.TestCase):
         self.assertAlmostEqual(data["provider"]["temperature"], 0.2)
 
     def test_inline_comment_stripped(self):
-        data = minimal_toml("model = \"gpt-4o\"  # the model\ncost = false # off\n")
+        data = minimal_toml('model = "gpt-4o"  # the model\ncost = false # off\n')
         self.assertEqual(data["model"], "gpt-4o")
         self.assertIs(data["cost"], False)
 
@@ -97,7 +78,7 @@ class TestMinimalToml(unittest.TestCase):
         self.assertEqual(_strip_comment('"a # b" # c'), '"a # b"')
 
     def test_parse_toml_matches_minimal(self):
-        text = "[ui]\ntheme = \"dracula\"\n"
+        text = '[ui]\ntheme = "dracula"\n'
         self.assertEqual(parse_toml(text)["ui"]["theme"], "dracula")
 
 
@@ -108,14 +89,21 @@ class TestConfigLoading(unittest.TestCase):
         self.assertEqual(flat, {"model": "m", "theme": "mono"})
 
     def test_project_overrides_user(self):
-        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as root:
+        with (
+            tempfile.TemporaryDirectory() as home,
+            tempfile.TemporaryDirectory() as root,
+        ):
             user_dir = os.path.join(home, ".config", "pycode")
             os.makedirs(user_dir)
-            with open(os.path.join(user_dir, "config.toml"), "w", encoding="utf-8") as fh:
+            with open(
+                os.path.join(user_dir, "config.toml"), "w", encoding="utf-8"
+            ) as fh:
                 fh.write('theme = "nord"\nmax_iterations = 10\nmodel = "user-model"\n')
             proj_dir = os.path.join(root, ".pycode")
             os.makedirs(proj_dir)
-            with open(os.path.join(proj_dir, "config.toml"), "w", encoding="utf-8") as fh:
+            with open(
+                os.path.join(proj_dir, "config.toml"), "w", encoding="utf-8"
+            ) as fh:
                 fh.write('theme = "dracula"\nmax_iterations = 20\n')
 
             cfg = load_config(root, home=home)
@@ -124,7 +112,10 @@ class TestConfigLoading(unittest.TestCase):
             self.assertEqual(cfg["model"], "user-model")
 
     def test_find_config_files_order(self):
-        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as root:
+        with (
+            tempfile.TemporaryDirectory() as home,
+            tempfile.TemporaryDirectory() as root,
+        ):
             user_dir = os.path.join(home, ".config", "pycode")
             os.makedirs(user_dir)
             user_cfg = os.path.join(user_dir, "config.toml")
@@ -150,6 +141,7 @@ class TestConfigLoading(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Themes
 # ---------------------------------------------------------------------------
+
 
 class TestThemes(unittest.TestCase):
     def tearDown(self):
@@ -197,10 +189,25 @@ class TestLinearDashboard(unittest.TestCase):
             project="crazycode",
             nav=[("Inbox", 8), ("Active", 3), ("Review", 2)],
             cards=[
-                {"id": "ENG-142", "title": "Refine terminal dashboard", "status": "In review", "priority": "High"},
-                {"id": "ENG-143", "title": "Polish status bar", "status": "In progress", "priority": "Med"},
+                {
+                    "id": "ENG-142",
+                    "title": "Refine terminal dashboard",
+                    "status": "In review",
+                    "priority": "High",
+                },
+                {
+                    "id": "ENG-143",
+                    "title": "Polish status bar",
+                    "status": "In progress",
+                    "priority": "Med",
+                },
             ],
-            selected={"id": "ENG-142", "title": "Refine terminal dashboard", "status": "In review", "priority": "High"},
+            selected={
+                "id": "ENG-142",
+                "title": "Refine terminal dashboard",
+                "status": "In review",
+                "priority": "High",
+            },
         )
         self.assertIn("pycode", dashboard)
         self.assertIn("Active", dashboard)
@@ -214,8 +221,18 @@ class TestLinearDashboard(unittest.TestCase):
             nav=[("Inbox", 0), ("Active", 0), ("Review", 0)],
             cards=[],
             selected={},
-            stats={"session_count": 0, "open_cards": 0, "review_items": 0, "last_activity": "Ready"},
-            project_health={"branch": "main", "dirty_files": 0, "status": "clean", "last_commit": "Ready"},
+            stats={
+                "session_count": 0,
+                "open_cards": 0,
+                "review_items": 0,
+                "last_activity": "Ready",
+            },
+            project_health={
+                "branch": "main",
+                "dirty_files": 0,
+                "status": "clean",
+                "last_commit": "Ready",
+            },
         )
         self.assertIn("No active work", dashboard)
         self.assertNotIn("Refine terminal dashboard", dashboard)
@@ -225,8 +242,18 @@ class TestLinearDashboard(unittest.TestCase):
         board = LiveDashboard(
             nav=[("Inbox", 8), ("Active", 3)],
             cards=[
-                {"id": "ENG-142", "title": "Refine terminal dashboard", "status": "In review", "priority": "High"},
-                {"id": "ENG-143", "title": "Polish status bar", "status": "In progress", "priority": "Med"},
+                {
+                    "id": "ENG-142",
+                    "title": "Refine terminal dashboard",
+                    "status": "In review",
+                    "priority": "High",
+                },
+                {
+                    "id": "ENG-143",
+                    "title": "Polish status bar",
+                    "status": "In progress",
+                    "priority": "Med",
+                },
             ],
             selected_index=0,
         )
@@ -240,8 +267,15 @@ class TestLinearDashboard(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             sess_dir = os.path.join(root, ".pycode-sessions")
             os.makedirs(sess_dir)
-            with open(os.path.join(sess_dir, "session-20260918-120000.jsonl"), "w", encoding="utf-8") as fh:
-                fh.write(json.dumps({"role": "user", "content": "Refactor the dashboard"}) + "\n")
+            with open(
+                os.path.join(sess_dir, "session-20260918-120000.jsonl"),
+                "w",
+                encoding="utf-8",
+            ) as fh:
+                fh.write(
+                    json.dumps({"role": "user", "content": "Refactor the dashboard"})
+                    + "\n"
+                )
                 fh.write(json.dumps({"role": "assistant", "content": "Done"}) + "\n")
             state = build_dashboard_state(root)
             self.assertTrue(state["cards"])
@@ -251,18 +285,44 @@ class TestLinearDashboard(unittest.TestCase):
     def test_build_dashboard_state_exposes_live_project_stats(self):
         with tempfile.TemporaryDirectory() as root:
             import subprocess
-            subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", root, "config", "user.email", "test@example.com"], check=True)
-            subprocess.run(["git", "-C", root, "config", "user.name", "Test User"], check=True)
+
+            subprocess.run(
+                ["git", "init"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", root, "config", "user.email", "test@example.com"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", root, "config", "user.name", "Test User"], check=True
+            )
             with open(os.path.join(root, "README.md"), "w", encoding="utf-8") as fh:
                 fh.write("hello\n")
             subprocess.run(["git", "-C", root, "add", "README.md"], check=True)
-            subprocess.run(["git", "-C", root, "commit", "-m", "initial"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["git", "-C", root, "commit", "-m", "initial"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
             sess_dir = os.path.join(root, ".pycode-sessions")
             os.makedirs(sess_dir)
-            with open(os.path.join(sess_dir, "session-20260918-120000.jsonl"), "w", encoding="utf-8") as fh:
-                fh.write(json.dumps({"role": "user", "content": "Refactor the dashboard"}) + "\n")
-                fh.write(json.dumps({"role": "assistant", "content": "Working on it"}) + "\n")
+            with open(
+                os.path.join(sess_dir, "session-20260918-120000.jsonl"),
+                "w",
+                encoding="utf-8",
+            ) as fh:
+                fh.write(
+                    json.dumps({"role": "user", "content": "Refactor the dashboard"})
+                    + "\n"
+                )
+                fh.write(
+                    json.dumps({"role": "assistant", "content": "Working on it"}) + "\n"
+                )
             state = build_dashboard_state(root)
             self.assertIn("stats", state)
             self.assertEqual(state["stats"]["session_count"], 1)
@@ -275,8 +335,20 @@ class TestLinearDashboard(unittest.TestCase):
         board = LiveDashboard(
             nav=[("Inbox", 2), ("Active", 1)],
             cards=[
-                {"id": "ENG-101", "title": "Refine board", "status": "Queued", "priority": "High", "source": "session"},
-                {"id": "ENG-102", "title": "Ship polish", "status": "In review", "priority": "Med", "source": "session"},
+                {
+                    "id": "ENG-101",
+                    "title": "Refine board",
+                    "status": "Queued",
+                    "priority": "High",
+                    "source": "session",
+                },
+                {
+                    "id": "ENG-102",
+                    "title": "Ship polish",
+                    "status": "In review",
+                    "priority": "Med",
+                    "source": "session",
+                },
             ],
             selected_index=0,
         )
@@ -292,7 +364,15 @@ class TestLinearDashboard(unittest.TestCase):
     def test_live_dashboard_palette_is_rendered(self):
         board = LiveDashboard(
             nav=[("Inbox", 1)],
-            cards=[{"id": "ENG-001", "title": "Draft board", "status": "Queued", "priority": "Med", "source": "session"}],
+            cards=[
+                {
+                    "id": "ENG-001",
+                    "title": "Draft board",
+                    "status": "Queued",
+                    "priority": "Med",
+                    "source": "session",
+                }
+            ],
             selected_index=0,
         )
         self.assertEqual(board.handle_key(":"), "palette")
@@ -303,6 +383,7 @@ class TestLinearDashboard(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Interrupts / Esc-to-abort
 # ---------------------------------------------------------------------------
+
 
 class TestAbortController(unittest.TestCase):
     def tearDown(self):
@@ -364,18 +445,23 @@ class TestRunWithAbort(unittest.TestCase):
     class _AbortingAgent(_Agent):
         def run(self, **kwargs):
             from pycode import interrupts as _i
+
             controller = _i.get_current()
             controller.abort()
             raise Aborted("aborted by user")
 
     def test_plain_run_returns_result(self):
         agent = self._Agent("hello")
-        self.assertEqual(_run_with_abort(agent, use_tui=False, user_input="hi"), "hello")
+        self.assertEqual(
+            _run_with_abort(agent, use_tui=False, user_input="hi"), "hello"
+        )
         self.assertEqual(agent.called, 1)
 
     def test_abort_returns_message(self):
         agent = self._AbortingAgent()
-        self.assertEqual(_run_with_abort(agent, use_tui=False, user_input="hi"), "[aborted by user]")
+        self.assertEqual(
+            _run_with_abort(agent, use_tui=False, user_input="hi"), "[aborted by user]"
+        )
 
     def test_controller_cleared_after_run(self):
         agent = self._Agent()

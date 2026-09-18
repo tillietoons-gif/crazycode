@@ -9,20 +9,10 @@ import tempfile
 import unittest
 
 from pycode.agent import Agent
-from pycode.index import (
-    ProjectIndex,
-    extract_symbols,
-    patterns_for,
-    indexable,
-    detect_language,
-)
-from pycode.tools import (
-    tool_read,
-    tool_symbols,
-    get_project_index,
-    dispatch_tool,
-    TOOL_SCHEMAS,
-)
+from pycode.index import (ProjectIndex, detect_language, extract_symbols,
+                          indexable, patterns_for)
+from pycode.tools import (TOOL_SCHEMAS, dispatch_tool, get_project_index,
+                          tool_read, tool_symbols)
 
 PY_SRC = '''\
 import os
@@ -41,7 +31,7 @@ async def async_fn():
     pass
 '''
 
-JS_SRC = '''\
+JS_SRC = """\
 export class Widget {
   render() {}
 }
@@ -51,9 +41,9 @@ function helper(x) {
 }
 
 const onClick = () => {};
-'''
+"""
 
-GO_SRC = '''\
+GO_SRC = """\
 package main
 
 import "fmt"
@@ -73,9 +63,9 @@ func main() {
 func (s *Server) Start() error {
     return nil
 }
-'''
+"""
 
-RS_SRC = '''\
+RS_SRC = """\
 pub struct Config {
     pub debug: bool,
 }
@@ -89,7 +79,7 @@ pub trait Runner {
 pub fn build(cfg: Config) -> Mode {
     Mode::Fast
 }
-'''
+"""
 
 
 class TestSymbolExtraction(unittest.TestCase):
@@ -143,12 +133,18 @@ class TestProjectIndex(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
         os.makedirs(os.path.join(self.root, "src"))
-        with open(os.path.join(self.root, "src", "mod.py"), "w", encoding="utf-8") as fh:
+        with open(
+            os.path.join(self.root, "src", "mod.py"), "w", encoding="utf-8"
+        ) as fh:
             fh.write(PY_SRC)
         with open(os.path.join(self.root, "app.js"), "w", encoding="utf-8") as fh:
             fh.write(JS_SRC)
         os.makedirs(os.path.join(self.root, "node_modules", "dep"))
-        with open(os.path.join(self.root, "node_modules", "dep", "x.js"), "w", encoding="utf-8") as fh:
+        with open(
+            os.path.join(self.root, "node_modules", "dep", "x.js"),
+            "w",
+            encoding="utf-8",
+        ) as fh:
             fh.write("function skipped() {}\n")
 
     def tearDown(self):
@@ -156,6 +152,7 @@ class TestProjectIndex(unittest.TestCase):
 
     def _index(self, **kw):
         from pycode.index import ProjectIndex
+
         return ProjectIndex(self.root, **kw)
 
     def test_build_finds_and_skips(self):
@@ -192,9 +189,15 @@ class TestProjectIndex(unittest.TestCase):
         self.assertTrue(refs)
         # the def line itself must not appear among references
         def_line = idx.definition("Greeter")["line"]
-        self.assertFalse(any(r["line"] == def_line and r["path"] == idx.definition("Greeter")["path"]
-                             for r in refs))
-        self.assertTrue(any("Greeter()" in r["text"] or "Greeter" in r["text"] for r in refs))
+        self.assertFalse(
+            any(
+                r["line"] == def_line and r["path"] == idx.definition("Greeter")["path"]
+                for r in refs
+            )
+        )
+        self.assertTrue(
+            any("Greeter()" in r["text"] or "Greeter" in r["text"] for r in refs)
+        )
 
     def test_summary_groups_by_file(self):
         idx = self._index()
@@ -213,6 +216,7 @@ class TestProjectIndex(unittest.TestCase):
 
         # fresh instance loads from cache without touching files
         from pycode.index import ProjectIndex
+
         idx2 = ProjectIndex(self.root)
         idx2.load()
         self.assertEqual(idx2.stats()["files"], idx.stats()["files"])
@@ -275,7 +279,7 @@ class TestSmartRead(unittest.TestCase):
         out = tool_read(self.path, symbol="standalone")
         self.assertIn("def standalone", out)
         # window starts above the def (line 9), so includes prior lines
-        self.assertIn("return f\"hello {name}\"", out)
+        self.assertIn('return f"hello {name}"', out)
 
     def test_read_symbol_not_found(self):
         out = tool_read(self.path, symbol="nonexistent_fn")
@@ -288,6 +292,7 @@ class TestSmartRead(unittest.TestCase):
 
     def test_find_symbol_line_helper(self):
         from pycode.tools import _find_symbol_line
+
         self.assertEqual(_find_symbol_line(PY_SRC, "standalone"), 9)
         self.assertIsNone(_find_symbol_line(PY_SRC, "zzz"))
 

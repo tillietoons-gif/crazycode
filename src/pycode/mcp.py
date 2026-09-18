@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import subprocess
 from typing import Any, Dict, List, Optional
+
 from pycode.tools import TOOL_SCHEMAS
 
 _MCP_VERSION = "2024-11-05"
@@ -27,7 +28,9 @@ _MCP_VERSION = "2024-11-05"
 class MCPServer:
     """Client for a single MCP stdio server (JSON-RPC over newline-delimited)."""
 
-    def __init__(self, name: str, command: List[str], env: Optional[Dict[str, str]] = None):
+    def __init__(
+        self, name: str, command: List[str], env: Optional[Dict[str, str]] = None
+    ):
         self.name = name
         self.command = command
         self.env = env
@@ -50,11 +53,14 @@ class MCPServer:
             text=True,
             env=self.env,
         )
-        self._rpc("initialize", {
-            "protocolVersion": _MCP_VERSION,
-            "capabilities": {},
-            "clientInfo": {"name": "pycode", "version": "0.2.0"},
-        })
+        self._rpc(
+            "initialize",
+            {
+                "protocolVersion": _MCP_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "pycode", "version": "0.2.0"},
+            },
+        )
         # initialized notification (no response expected)
         self._notify("notifications/initialized", {})
         self._tools = self._list_tools()
@@ -83,7 +89,12 @@ class MCPServer:
         return self._id
 
     def _rpc(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        req = {"jsonrpc": "2.0", "id": self._next_id(), "method": method, "params": params}
+        req = {
+            "jsonrpc": "2.0",
+            "id": self._next_id(),
+            "method": method,
+            "params": params,
+        }
         return self._send(req, expect_response=True)
 
     def _notify(self, method: str, params: Dict[str, Any]) -> None:
@@ -118,14 +129,20 @@ class MCPServer:
             name = t.get("name", "")
             if not name:
                 continue
-            schemas.append({
-                "type": "function",
-                "function": {
-                    "name": f"mcp_{self.name}_{name}",
-                    "description": t.get("description", f"MCP tool {name} on {self.name}"),
-                    "parameters": t.get("inputSchema", {"type": "object", "properties": {}}),
-                },
-            })
+            schemas.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": f"mcp_{self.name}_{name}",
+                        "description": t.get(
+                            "description", f"MCP tool {name} on {self.name}"
+                        ),
+                        "parameters": t.get(
+                            "inputSchema", {"type": "object", "properties": {}}
+                        ),
+                    },
+                }
+            )
         return schemas
 
     def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
@@ -133,7 +150,7 @@ class MCPServer:
         # strip the "mcp_<server>_" prefix if present
         prefix = f"mcp_{self.name}_"
         if tool_name.startswith(prefix):
-            tool_name = tool_name[len(prefix):]
+            tool_name = tool_name[len(prefix) :]
         resp = self._rpc("tools/call", {"name": tool_name, "arguments": arguments})
         result = resp.get("result", {})
         # MCP tools/call returns {content: [{type:"text", text:"..."}], ...}
@@ -155,7 +172,9 @@ class MCPRegistry:
     def __init__(self):
         self.servers: List[MCPServer] = []
 
-    def add(self, name: str, command: List[str], env: Optional[Dict[str, str]] = None) -> MCPServer:
+    def add(
+        self, name: str, command: List[str], env: Optional[Dict[str, str]] = None
+    ) -> MCPServer:
         server = MCPServer(name, command, env)
         self.servers.append(server)
         return server
@@ -182,6 +201,6 @@ class MCPRegistry:
                 continue
             prefix = f"mcp_{s.name}_"
             if name.startswith(prefix):
-                clean_name = name[len(prefix):]
+                clean_name = name[len(prefix) :]
                 return s.call_tool(clean_name, args)
         return None

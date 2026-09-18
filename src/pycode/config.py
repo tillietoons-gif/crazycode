@@ -42,9 +42,22 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on 3.10
 PROJECT_CONFIG_REL = os.path.join(".pycode", "config.toml")
 
 _KNOWN_KEYS = {
-    "theme", "auto_approve", "always_yes", "quiet", "plain", "cost", "no_map",
-    "context_budget", "max_iterations", "self_review", "loop_max",
-    "model", "api_base", "temperature", "max_tokens", "api_key",
+    "theme",
+    "auto_approve",
+    "always_yes",
+    "quiet",
+    "plain",
+    "cost",
+    "no_map",
+    "context_budget",
+    "max_iterations",
+    "self_review",
+    "loop_max",
+    "model",
+    "api_base",
+    "temperature",
+    "max_tokens",
+    "api_key",
     "hooks",
 }
 
@@ -77,6 +90,7 @@ def find_config_files(root: str = ".", home: Optional[str] = None) -> List[str]:
 # ---------------------------------------------------------------------------
 # Minimal TOML subset parser (fallback for Python 3.10)
 # ---------------------------------------------------------------------------
+
 
 def _strip_comment(value: str) -> str:
     """Remove a trailing ``# comment`` that is not inside a quoted string."""
@@ -158,6 +172,7 @@ def parse_toml(text: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Loading + merging
 # ---------------------------------------------------------------------------
+
 
 def _load_file(path: str) -> Dict[str, Any]:
     try:

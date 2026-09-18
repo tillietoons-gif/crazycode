@@ -49,11 +49,11 @@ def onboarding_message() -> str:
         "No LLM API key detected. To get started:\n"
         "\n"
         "  Option A - local Ollama (no key needed, free):\n"
-        + _preset_snippet("ollama") +
-        "\n"
+        + _preset_snippet("ollama")
+        + "\n"
         "  Option B - set a provider key and run with its preset:\n"
-        + "\n".join(b for b in blocks[1:]) +
-        "\n"
+        + "\n".join(b for b in blocks[1:])
+        + "\n"
         "  Or set the generic env vars:\n"
         "export PYCODE_API_KEY='your-key'\n"
         "export PYCODE_API_BASE='https://api.openai.com/v1'\n"
@@ -67,9 +67,7 @@ def should_show_onboarding(force: bool = False) -> bool:
         return True
     if has_any_credential():
         return False
-    marker = os.path.join(
-        os.path.expanduser("~"), ".pycode", ".onboarded"
-    )
+    marker = os.path.join(os.path.expanduser("~"), ".pycode", ".onboarded")
     return not os.path.exists(marker)
 
 
@@ -77,6 +75,7 @@ def mark_onboarded() -> None:
     """Record that onboarding has been shown, so we don't nag again."""
     import os
     import pathlib
+
     marker = pathlib.Path(os.path.expanduser("~")) / ".pycode" / ".onboarded"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("1", encoding="utf-8")

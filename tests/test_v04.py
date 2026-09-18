@@ -6,12 +6,13 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from pycode.diff_reviewer import (DECISION_APPROVE, DECISION_REJECT,
+                                  DiffReviewer, render_diff)
+from pycode.scaffold import _detect_project, exists, generate, render_template
 from pycode.tools import dispatch_tool
-from pycode.diff_reviewer import DiffReviewer, render_diff, DECISION_APPROVE, DECISION_REJECT
-from pycode.scaffold import generate, render_template, _detect_project, exists
-from pathlib import Path
 
 
 class TestDiffReviewer(unittest.TestCase):
@@ -19,7 +20,9 @@ class TestDiffReviewer(unittest.TestCase):
         p = os.path.join(d, fname)
         with open(p, "w") as f:
             f.write(old)
-        staged = json.loads(dispatch_tool("write", {"path": p, "content": new}, dry_run=True))
+        staged = json.loads(
+            dispatch_tool("write", {"path": p, "content": new}, dry_run=True)
+        )
         staged["_tool"] = "write"
         staged["_args"] = {"path": p, "content": new}
         return staged
@@ -40,7 +43,9 @@ class TestDiffReviewer(unittest.TestCase):
             change = self._change(d)
             r = DiffReviewer()
             r.stage(change)
-            with patch("pycode.diff_reviewer._prompt_decision", return_value=DECISION_REJECT):
+            with patch(
+                "pycode.diff_reviewer._prompt_decision", return_value=DECISION_REJECT
+            ):
                 s = r.review()
             self.assertEqual(s["rejected"], 1)
             self.assertEqual(s["approved"], 0)
@@ -52,7 +57,9 @@ class TestDiffReviewer(unittest.TestCase):
             change = self._change(d)
             r = DiffReviewer()
             r.stage(change)
-            with patch("pycode.diff_reviewer._prompt_decision", return_value=DECISION_APPROVE):
+            with patch(
+                "pycode.diff_reviewer._prompt_decision", return_value=DECISION_APPROVE
+            ):
                 s = r.review()
             self.assertEqual(s["approved"], 1)
             with open(change["_args"]["path"]) as fh:

@@ -8,19 +8,18 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
-from pycode.permissions import (
-    PermissionGuard, PermissionDecision, make_permission_confirm,
-    _parse_toml_list, _parse_toml_str, _parse_toml_bool,
-)
-from pycode.rewind import RewindManager, Checkpoint
-from pycode.subagents import Subagent, SubagentRegistry, task_tool_schema
 from pycode.agent import Agent
+from pycode.permissions import (PermissionDecision, PermissionGuard,
+                                _parse_toml_bool, _parse_toml_list,
+                                _parse_toml_str, make_permission_confirm)
 from pycode.provider import LLMProviderError
-
+from pycode.rewind import Checkpoint, RewindManager
+from pycode.subagents import Subagent, SubagentRegistry, task_tool_schema
 
 # ---------------------------------------------------------------------------
 # Permission guard
 # ---------------------------------------------------------------------------
+
 
 class TestPermissionGuard(unittest.TestCase):
     def test_default_blocks_catastrophic_bash(self):
@@ -68,14 +67,16 @@ class TestPermissionGuard(unittest.TestCase):
         self.assertFalse(g.check("bash", {"command": "rm -rf /"}).allowed)
 
     def test_toml_parsing(self):
-        text = '''
+        text = """
 allow = ["read", "bash", "write"]
 bash_blocklist = ["rm -rf /", "shutdown"]
 write_root = "src/"
 yolo = true
-'''
+"""
         self.assertEqual(_parse_toml_list(text, "allow"), ["read", "bash", "write"])
-        self.assertEqual(_parse_toml_list(text, "bash_blocklist"), ["rm -rf /", "shutdown"])
+        self.assertEqual(
+            _parse_toml_list(text, "bash_blocklist"), ["rm -rf /", "shutdown"]
+        )
         self.assertEqual(_parse_toml_str(text, "write_root"), "src/")
         self.assertTrue(_parse_toml_bool(text, "yolo"))
 
@@ -101,7 +102,9 @@ class TestAgentPermissionEnforcement(unittest.TestCase):
     def test_denied_write_is_not_dispatched(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "blocked.txt")
-            agent = Agent(api_key="k", verbose=False, project_root=directory, auto_approve=True)
+            agent = Agent(
+                api_key="k", verbose=False, project_root=directory, auto_approve=True
+            )
             agent._permissions = PermissionGuard(allow_tools=["read"])
 
             class StubProvider:
@@ -113,13 +116,17 @@ class TestAgentPermissionEnforcement(unittest.TestCase):
                     if self.calls == 1:
                         return {
                             "content": "",
-                            "tool_calls": [{
-                                "id": "call_1",
-                                "function": {
-                                    "name": "write",
-                                    "arguments": json.dumps({"path": path, "content": "blocked"}),
-                                },
-                            }],
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "write",
+                                        "arguments": json.dumps(
+                                            {"path": path, "content": "blocked"}
+                                        ),
+                                    },
+                                }
+                            ],
                         }
                     return {"content": "done", "tool_calls": []}
 
@@ -140,6 +147,7 @@ class TestAgentPermissionEnforcement(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Rewind / branching
 # ---------------------------------------------------------------------------
+
 
 def _msgs(n: int):
     base = [{"role": "system", "content": "sys"}]
@@ -222,12 +230,15 @@ class TestAgentRewind(unittest.TestCase):
         count = agent.branch_from(0, "second instruction")
         # system + first user + second instruction
         self.assertGreaterEqual(count, 3)
-        self.assertEqual(agent.messages[-1], {"role": "user", "content": "second instruction"})
+        self.assertEqual(
+            agent.messages[-1], {"role": "user", "content": "second instruction"}
+        )
 
 
 # ---------------------------------------------------------------------------
 # Subagents
 # ---------------------------------------------------------------------------
+
 
 class TestSubagents(unittest.TestCase):
     def test_task_tool_schema(self):
@@ -250,12 +261,15 @@ class TestSubagents(unittest.TestCase):
     def test_subagent_result_returns_summary(self):
         parent = Agent(api_key="k")
         reg = SubagentRegistry(parent)
+
         # Stub the child's LLM so run() returns a known summary
         class StubProvider:
             def chat(self, messages, tools=None):
                 return {"content": "I did the task", "tool_calls": []}
+
             def chat_stream(self, messages, tools=None):
                 raise LLMProviderError("no stream")
+
         sa = reg.spawn("worker", "do the thing")
         sa.agent.provider = StubProvider()
         sa.verbose = False
@@ -266,11 +280,14 @@ class TestSubagents(unittest.TestCase):
         parent = Agent(api_key="k")
         reg = SubagentRegistry(parent)
         sa = reg.spawn("task-runner", "summarize")
+
         class StubProvider:
             def chat(self, messages, tools=None):
                 return {"content": "summary body", "tool_calls": []}
+
             def chat_stream(self, messages, tools=None):
                 raise LLMProviderError("no stream")
+
         sa.agent.provider = StubProvider()
         sa.verbose = False
         sa.result = sa.run()

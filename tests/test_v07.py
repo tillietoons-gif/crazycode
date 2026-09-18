@@ -5,20 +5,20 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from pycode.tui_markdown import render_markdown, highlight_code
-from pycode.tui_statusbar import build_status_line, _bar, _fmt_k, _fmt_usd
-from pycode.tui_feed import ActivityFeed, FeedEntry
-from pycode.tui_commands import COMMANDS, ALIASES, canonicalize, help_text
-from pycode.tui_diff_review import InteractiveDiffReviewer
 from pycode.agent import Agent
 from pycode.cost import CostTracker
-
+from pycode.tui_commands import ALIASES, COMMANDS, canonicalize, help_text
+from pycode.tui_diff_review import InteractiveDiffReviewer
+from pycode.tui_feed import ActivityFeed, FeedEntry
+from pycode.tui_markdown import highlight_code, render_markdown
+from pycode.tui_statusbar import _bar, _fmt_k, _fmt_usd, build_status_line
 
 # ---------------------------------------------------------------------------
 # Markdown / code highlighter
 # ---------------------------------------------------------------------------
+
 
 class TestMarkdown(unittest.TestCase):
     def test_code_block_no_crash(self):
@@ -59,6 +59,7 @@ class TestMarkdown(unittest.TestCase):
 # Status bar
 # ---------------------------------------------------------------------------
 
+
 class TestStatusBar(unittest.TestCase):
     def test_bar_fully_filled(self):
         self.assertEqual(_bar(100, 100, width=10), "██████████")
@@ -89,10 +90,12 @@ class TestStatusBar(unittest.TestCase):
 # Activity feed
 # ---------------------------------------------------------------------------
 
+
 class TestActivityFeed(unittest.TestCase):
     def _feed(self):
         f = ActivityFeed(use_color=False)
         import time
+
         f.begin("t1", "read", {"path": "a.py"})
         f.end("t1", "read", {"path": "a.py"}, "l1\nl2\nl3", ok=True)
         f.begin("t2", "bash", {"command": "false"})
@@ -126,13 +129,17 @@ class TestActivityFeed(unittest.TestCase):
         f = ActivityFeed(use_color=False)
         f.begin("t1", "write", {"path": "blocked.txt"})
         f.end(
-            "t1", "write", {"path": "blocked.txt"},
-            '{"error":"Permission denied: write is not allowed"}', ok=False,
+            "t1",
+            "write",
+            {"path": "blocked.txt"},
+            '{"error":"Permission denied: write is not allowed"}',
+            ok=False,
         )
         self.assertIn("Permission denied", f.render_all())
 
     def test_dump(self):
         import json
+
         f = self._feed()
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "feed.jsonl")
@@ -145,22 +152,33 @@ class TestActivityFeed(unittest.TestCase):
     def test_agent_records_feed(self):
         # an agent run with a stubbed LLM should populate the feed when a tool is called
         agent = Agent(api_key="k", verbose=False)
+
         class StubProvider:
             call = 0
+
             def chat(self, messages, tools=None):
                 StubProvider.call += 1
                 if StubProvider.call == 1:
                     return {
                         "content": "",
-                        "tool_calls": [{
-                            "id": "c1", "type": "function",
-                            "function": {"name": "read", "arguments": '{"path":"nonexistent_file_xyz"}'},
-                        }],
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "type": "function",
+                                "function": {
+                                    "name": "read",
+                                    "arguments": '{"path":"nonexistent_file_xyz"}',
+                                },
+                            }
+                        ],
                     }
                 return {"content": "done", "tool_calls": []}
+
             def chat_stream(self, messages, tools=None):
                 from pycode.provider import LLMProviderError
+
                 raise LLMProviderError("no stream")
+
         agent.provider = StubProvider()
         agent.run("hi")
         self.assertTrue(any(e.tool == "read" for e in agent.feed.entries))
@@ -169,6 +187,7 @@ class TestActivityFeed(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Slash commands
 # ---------------------------------------------------------------------------
+
 
 class TestCommands(unittest.TestCase):
     def test_alias_expansion(self):
@@ -193,14 +212,18 @@ class TestCommands(unittest.TestCase):
 # Keyboard diff reviewer
 # ---------------------------------------------------------------------------
 
+
 class TestInteractiveDiffReviewer(unittest.TestCase):
     def _make_pending(self, d):
         p = os.path.join(d, "f.txt")
         with open(p, "w") as f:
             f.write("old\n")
         staged = {
-            "dry_run": True, "path": p, "diff": "-old\n+new\n",
-            "_tool": "write", "_args": {"path": p, "content": "new\n"},
+            "dry_run": True,
+            "path": p,
+            "diff": "-old\n+new\n",
+            "_tool": "write",
+            "_args": {"path": p, "content": "new\n"},
         }
         return staged
 
@@ -208,8 +231,10 @@ class TestInteractiveDiffReviewer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             pending = [self._make_pending(d)]
             applied = []
+
             def apply(tool, args):
                 applied.append(args["path"])
+
             reviewer = InteractiveDiffReviewer(pending, apply, use_color=False)
             with patch("pycode.tui_diff_review._readline_on_tty", return_value="a"):
                 s = reviewer.run()
@@ -219,7 +244,9 @@ class TestInteractiveDiffReviewer(unittest.TestCase):
     def test_reject_all(self):
         with tempfile.TemporaryDirectory() as d:
             pending = [self._make_pending(d)]
-            reviewer = InteractiveDiffReviewer(pending, lambda t, a: None, use_color=False)
+            reviewer = InteractiveDiffReviewer(
+                pending, lambda t, a: None, use_color=False
+            )
             with patch("pycode.tui_diff_review._readline_on_tty", return_value="r"):
                 s = reviewer.run()
             self.assertEqual(s["rejected"], 1)
@@ -230,7 +257,9 @@ class TestInteractiveDiffReviewer(unittest.TestCase):
             pending[1]["path"] = os.path.join(d, "f2.txt")
             with open(pending[1]["path"], "w") as f:
                 f.write("old2\n")
-            reviewer = InteractiveDiffReviewer(pending, lambda t, a: None, use_color=False)
+            reviewer = InteractiveDiffReviewer(
+                pending, lambda t, a: None, use_color=False
+            )
             # first key: quit -> both rejected
             with patch("pycode.tui_diff_review._readline_on_tty", return_value="q"):
                 s = reviewer.run()

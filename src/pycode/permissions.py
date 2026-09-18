@@ -54,7 +54,9 @@ class PermissionGuard:
     """Evaluates tool calls against a policy."""
 
     allow_tools: Optional[List[str]] = None  # None = all allowed
-    bash_blocklist: List[str] = field(default_factory=lambda: list(_DEFAULT_BASH_BLOCKLIST))
+    bash_blocklist: List[str] = field(
+        default_factory=lambda: list(_DEFAULT_BASH_BLOCKLIST)
+    )
     write_root: Optional[str] = None
     yolo: bool = False
     source: str = "builtin"
@@ -98,19 +100,29 @@ class PermissionGuard:
         # YOLO bypasses everything except hard-coded catastrophic bash
         if self.yolo:
             if tool_name == "bash" and self._bash_blocked(args.get("command", "")):
-                return PermissionDecision(False, f"blocked by yolo-safety blocklist: {args.get('command','')}", False)
+                return PermissionDecision(
+                    False,
+                    f"blocked by yolo-safety blocklist: {args.get('command','')}",
+                    False,
+                )
             return PermissionDecision(True, "yolo mode", False)
 
         # 1. Tool allowlist
         if self.allow_tools is not None and tool_name not in self.allow_tools:
-            return PermissionDecision(False, f"tool '{tool_name}' not in allow list", False)
+            return PermissionDecision(
+                False, f"tool '{tool_name}' not in allow list", False
+            )
 
         # 2. Bash blocklist
         if tool_name == "bash":
             if self._bash_blocked(args.get("command", "")):
-                return PermissionDecision(False, f"bash command blocked: {args.get('command','')}", False)
+                return PermissionDecision(
+                    False, f"bash command blocked: {args.get('command','')}", False
+                )
             # bash that mutates state still requires confirmation
-            if re.search(r"[|>&>]|(^|\s)(mv|cp|mkdir|touch|sudo|kill)\b", args.get("command", "")):
+            if re.search(
+                r"[|>&>]|(^|\s)(mv|cp|mkdir|touch|sudo|kill)\b", args.get("command", "")
+            ):
                 return PermissionDecision(True, "bash may mutate; confirm", True)
             return PermissionDecision(True, "", False)
 
@@ -144,7 +156,11 @@ class PermissionGuard:
         try:
             base = Path(os.getcwd())
             root = (base / self.write_root).resolve()
-            t = (base / target).resolve() if not os.path.isabs(target) else Path(target).resolve()
+            t = (
+                (base / target).resolve()
+                if not os.path.isabs(target)
+                else Path(target).resolve()
+            )
             return t.is_relative_to(root)
         except (ValueError, OSError):
             return False
@@ -154,6 +170,7 @@ class PermissionGuard:
 # Minimal TOML subset parser (lists, strings, bools) - avoids a tomllib dep
 # on older Pythons while staying stdlib-only.
 # ---------------------------------------------------------------------------
+
 
 def _section_value(text: str, key: str) -> Optional[str]:
     """Find `key = <value>` anywhere in the text (simple line scan)."""
@@ -199,6 +216,7 @@ def _parse_toml_bool(text: str, key: str) -> bool:
 # A confirmation callback that honors PermissionGuard decisions
 # ---------------------------------------------------------------------------
 
+
 def make_permission_confirm(
     guard: PermissionGuard,
     prompt: Optional[Any] = None,
@@ -209,6 +227,7 @@ def make_permission_confirm(
     - Tools marked requires_confirm -> call `prompt` (or input()) to ask.
     - Everything else -> True.
     """
+
     def confirm(tool_name: str, args: Dict[str, Any]) -> bool:
         decision = guard.check(tool_name, args)
         if not decision.allowed:
@@ -220,7 +239,9 @@ def make_permission_confirm(
         if prompt is not None:
             return bool(prompt(tool_name, args, decision.reason))
         try:
-            ans = input(f"  approve {tool_name}: {args.get('command') or args.get('path') or decision.reason}? [y/N] ")
+            ans = input(
+                f"  approve {tool_name}: {args.get('command') or args.get('path') or decision.reason}? [y/N] "
+            )
         except (EOFError, KeyboardInterrupt):
             return False
         return ans.strip().lower() in ("y", "yes")

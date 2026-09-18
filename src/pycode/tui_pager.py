@@ -19,7 +19,7 @@ from typing import List, Optional
 
 def _page(text_lines: List[str], page: int, page_size: int) -> List[str]:
     start = page * page_size
-    return text_lines[start:start + page_size]
+    return text_lines[start : start + page_size]
 
 
 def pager(

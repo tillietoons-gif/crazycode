@@ -71,8 +71,8 @@ def paint(line: str, use_color: bool = True) -> str:
     if end == -1:
         end = len(line)
     head = line[:idx]
-    bar = line[idx:end + 1]
-    tail = line[end + 1:]
+    bar = line[idx : end + 1]
+    tail = line[end + 1 :]
     # color over-budget contexts red
     pct = 0
     try:
@@ -93,8 +93,9 @@ def update_status(
     use_color: bool = True,
 ) -> None:
     """Print the status line to stderr (in-place on a TTY, append otherwise)."""
-    raw = build_status_line(iteration, max_iterations, ctx_used, ctx_budget,
-                            cost_session, model)
+    raw = build_status_line(
+        iteration, max_iterations, ctx_used, ctx_budget, cost_session, model
+    )
     painted = paint(raw, use_color=use_color)
     if sys.stderr.isatty():
         # fixed-width rewrite so the line overwrites in place

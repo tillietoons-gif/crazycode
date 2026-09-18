@@ -16,8 +16,8 @@ import json
 import os
 import re
 import subprocess
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -48,7 +48,9 @@ def _safe_read_file(path: str, offset: int = 1, limit: int = _MAX_READ_LINES) ->
     return "\n".join(result) if result else "(empty)"
 
 
-def _run_cmd(cmd: str, workdir: Optional[str] = None, timeout: int = 120) -> Dict[str, Any]:
+def _run_cmd(
+    cmd: str, workdir: Optional[str] = None, timeout: int = 120
+) -> Dict[str, Any]:
     """Run a shell command and capture stdout/stderr/exit_code."""
     cwd = workdir or os.getcwd()
     if not os.path.isdir(cwd):
@@ -65,9 +67,9 @@ def _run_cmd(cmd: str, workdir: Optional[str] = None, timeout: int = 120) -> Dic
         stdout = proc.stdout
         stderr = proc.stderr
         if len(stdout) > _MAX_BASH_OUTPUT:
-            stdout = stdout[: _MAX_BASH_OUTPUT] + "\n…[output truncated]"
+            stdout = stdout[:_MAX_BASH_OUTPUT] + "\n…[output truncated]"
         if len(stderr) > _MAX_BASH_OUTPUT:
-            stderr = stderr[: _MAX_BASH_OUTPUT] + "\n…[output truncated]"
+            stderr = stderr[:_MAX_BASH_OUTPUT] + "\n…[output truncated]"
         return {
             "exit_code": proc.returncode,
             "stdout": stdout,
@@ -97,7 +99,9 @@ def _fetch_url(url: str, timeout: int = 30) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def tool_bash(command: str, workdir: Optional[str] = None, timeout: Optional[int] = None) -> Dict[str, Any]:
+def tool_bash(
+    command: str, workdir: Optional[str] = None, timeout: Optional[int] = None
+) -> Dict[str, Any]:
     """Execute a shell command. Returns exit_code, stdout, stderr."""
     timeout = timeout or 120
     return _run_cmd(command, workdir=workdir, timeout=timeout)
@@ -115,6 +119,7 @@ def get_job_manager() -> Any:
     global _JOB_MANAGER
     if _JOB_MANAGER is None:
         from pycode.jobs import JobManager
+
         _JOB_MANAGER = JobManager()
     return _JOB_MANAGER
 
@@ -139,8 +144,12 @@ def tool_job_kill(job_id: str) -> Dict[str, Any]:
     return get_job_manager().kill(job_id)
 
 
-def tool_read(path: str, offset: int = 1, limit: int = _MAX_READ_LINES,
-              symbol: Optional[str] = None) -> str:
+def tool_read(
+    path: str,
+    offset: int = 1,
+    limit: int = _MAX_READ_LINES,
+    symbol: Optional[str] = None,
+) -> str:
     """Read a file (max 200 lines per call, 1-indexed offset).
 
     If ``symbol`` is given, read around that definition instead: the window
@@ -181,14 +190,21 @@ def _find_symbol_line(text: str, symbol: str) -> Optional[int]:
 # Symbol index tool
 # ---------------------------------------------------------------------------
 
-def tool_symbols(query: str = "", mode: str = "find", kind: Optional[str] = None,
-                 path: Optional[str] = None, limit: int = 25) -> Dict[str, Any]:
+
+def tool_symbols(
+    query: str = "",
+    mode: str = "find",
+    kind: Optional[str] = None,
+    path: Optional[str] = None,
+    limit: int = 25,
+) -> Dict[str, Any]:
     """Query the project symbol index.
 
     Modes: find (definitions matching query), refs (references to query),
     map (whole-project summary). Builds/refreshes the index lazily.
     """
     from pycode.index import ProjectIndex
+
     idx = get_project_index()
     if not idx.files:
         idx.build()
@@ -213,6 +229,7 @@ def get_project_index(root: Optional[str] = None) -> Any:
     global _PROJECT_INDEX
     if _PROJECT_INDEX is None or root is not None:
         from pycode.index import ProjectIndex
+
         _PROJECT_INDEX = ProjectIndex(root or os.getcwd())
     return _PROJECT_INDEX
 
@@ -229,7 +246,9 @@ def tool_write(path: str, content: str) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
-def tool_edit(path: str, old_string: str, new_string: str, replace_all: bool = False) -> Dict[str, Any]:
+def tool_edit(
+    path: str, old_string: str, new_string: str, replace_all: bool = False
+) -> Dict[str, Any]:
     """Replace a substring in a file (single occurrence, or all)."""
     p = Path(path)
     if not p.is_file():
@@ -239,7 +258,10 @@ def tool_edit(path: str, old_string: str, new_string: str, replace_all: bool = F
     if count == 0:
         return {"ok": False, "error": f"old_string not found in {path}"}
     if count > 1 and not replace_all:
-        return {"ok": False, "error": f"old_string found {count} times; set replace_all=true or provide more context"}
+        return {
+            "ok": False,
+            "error": f"old_string found {count} times; set replace_all=true or provide more context",
+        }
     if replace_all:
         new_text = text.replace(old_string, new_string)
     else:
@@ -257,7 +279,8 @@ def compute_diff(old_text: str, new_text: str, path: str = "") -> str:
     old_lines = (old_text or "").splitlines(keepends=True)
     new_lines = (new_text or "").splitlines(keepends=True)
     diff = difflib.unified_diff(
-        old_lines, new_lines,
+        old_lines,
+        new_lines,
         fromfile=f"a/{path}" if path else "a/(existing)",
         tofile=f"b/{path}" if path else "b/(new)",
         n=2,
@@ -292,7 +315,12 @@ def tool_glob(pattern: str, path: Optional[str] = None) -> List[str]:
     return sorted(matches)[:500]  # cap at 500 to avoid huge results
 
 
-def tool_grep(pattern: str, path: Optional[str] = None, include: Optional[str] = None, max_results: int = 200) -> List[Dict[str, Any]]:
+def tool_grep(
+    pattern: str,
+    path: Optional[str] = None,
+    include: Optional[str] = None,
+    max_results: int = 200,
+) -> List[Dict[str, Any]]:
     """Search file contents with a regex pattern. Returns matching lines with file/line info."""
     search_dir = Path(path) if path else Path(os.getcwd())
     if not search_dir.exists():
@@ -316,7 +344,11 @@ def tool_grep(pattern: str, path: Optional[str] = None, include: Optional[str] =
             if exts:
                 # check extension via endswith (handles *.py, *.tsx, etc.)
                 if not any(
-                    fname.endswith(ext.lstrip("*")) if ext.startswith("*") else fname == ext
+                    (
+                        fname.endswith(ext.lstrip("*"))
+                        if ext.startswith("*")
+                        else fname == ext
+                    )
                     for ext in exts
                 ):
                     continue
@@ -325,7 +357,13 @@ def tool_grep(pattern: str, path: Optional[str] = None, include: Optional[str] =
                 with open(fpath, encoding="utf-8", errors="replace") as fh:
                     for lineno, line in enumerate(fh, start=1):
                         if rx.search(line):
-                            results.append({"file": str(fpath), "line": lineno, "text": line.rstrip()})
+                            results.append(
+                                {
+                                    "file": str(fpath),
+                                    "line": lineno,
+                                    "text": line.rstrip(),
+                                }
+                            )
                             if len(results) >= max_results:
                                 return results
             except Exception:  # noqa: BLE001
@@ -344,17 +382,20 @@ def tool_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
     Uses DuckDuckGo's HTML endpoint (no API key required). Returns a list of
     {title, url}. Fails gracefully if the network is unavailable.
     """
-    import urllib.parse
-    import html as _html
     import base64
+    import html as _html
+    import urllib.parse
     import zlib
+
     try:
         url = "https://duckduckgo.com/html/?q=" + urllib.parse.quote(query)
         req = urllib.request.Request(url, headers={"User-Agent": "pycode-agent/0.5"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             body = resp.read().decode("utf-8", errors="replace")
         results: List[Dict[str, str]] = []
-        for m in re.finditer(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', body, re.S):
+        for m in re.finditer(
+            r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', body, re.S
+        ):
             href = m.group(1)
             title = _html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
             real_url = _decode_ddg_url(href) if "uddg=" in href else href
@@ -368,9 +409,10 @@ def tool_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
 
 def _decode_ddg_url(href: str) -> str:
     """Decode DuckDuckGo's uddg redirect param to the real URL."""
-    import urllib.parse
     import base64
+    import urllib.parse
     import zlib
+
     try:
         params = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
         b64 = params.get("uddg", [""])[0]
@@ -396,6 +438,7 @@ def tool_view_image(path: str) -> Dict[str, Any]:
     """
     import base64
     import mimetypes
+
     MAX_BYTES = 10 * 1024 * 1024  # 10 MB cap
     p = Path(path)
     if not p.is_file():
@@ -412,7 +455,9 @@ def tool_view_image(path: str) -> Dict[str, Any]:
     }
 
 
-def tool_todo(add: Optional[List[Dict[str, str]]] = None, clear: bool = False) -> Dict[str, Any]:
+def tool_todo(
+    add: Optional[List[Dict[str, str]]] = None, clear: bool = False
+) -> Dict[str, Any]:
     """Manage a simple in-memory todo list shared across the session."""
     # Stored on the agent instance via the module-level dict
     global _todo_items
@@ -439,9 +484,18 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The shell command to run"},
-                    "workdir": {"type": "string", "description": "Optional working directory"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds (default 120)"},
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to run",
+                    },
+                    "workdir": {
+                        "type": "string",
+                        "description": "Optional working directory",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (default 120)",
+                    },
                 },
                 "required": ["command"],
             },
@@ -455,10 +509,22 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Absolute or relative file path"},
-                    "offset": {"type": "integer", "description": "Line number to start from (1-indexed, default 1)"},
-                    "limit": {"type": "integer", "description": "Max lines to read (default 200)"},
-                    "symbol": {"type": "string", "description": "Read around this definition (function/class name) instead of using offset"},
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute or relative file path",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Line number to start from (1-indexed, default 1)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max lines to read (default 200)",
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Read around this definition (function/class name) instead of using offset",
+                    },
                 },
                 "required": ["path"],
             },
@@ -488,9 +554,15 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File path"},
-                    "old_string": {"type": "string", "description": "Exact text to find"},
+                    "old_string": {
+                        "type": "string",
+                        "description": "Exact text to find",
+                    },
                     "new_string": {"type": "string", "description": "Replacement text"},
-                    "replace_all": {"type": "boolean", "description": "Replace all occurrences (default false)"},
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "Replace all occurrences (default false)",
+                    },
                 },
                 "required": ["path", "old_string", "new_string"],
             },
@@ -505,7 +577,10 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string", "description": "Glob pattern"},
-                    "path": {"type": "string", "description": "Base directory to search from"},
+                    "path": {
+                        "type": "string",
+                        "description": "Base directory to search from",
+                    },
                 },
                 "required": ["pattern"],
             },
@@ -519,10 +594,22 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string", "description": "Regex pattern to search for"},
-                    "path": {"type": "string", "description": "Base directory to search"},
-                    "include": {"type": "string", "description": "File filter (e.g. *.py or *.{ts,tsx})"},
-                    "max_results": {"type": "integer", "description": "Max matching lines to return"},
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search for",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Base directory to search",
+                    },
+                    "include": {
+                        "type": "string",
+                        "description": "File filter (e.g. *.py or *.{ts,tsx})",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max matching lines to return",
+                    },
                 },
                 "required": ["pattern"],
             },
@@ -537,7 +624,10 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "URL to fetch"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds (default 30)"},
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (default 30)",
+                    },
                 },
                 "required": ["url"],
             },
@@ -557,13 +647,27 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                             "type": "object",
                             "properties": {
                                 "content": {"type": "string"},
-                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]},
-                                "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "pending",
+                                        "in_progress",
+                                        "completed",
+                                        "cancelled",
+                                    ],
+                                },
+                                "priority": {
+                                    "type": "string",
+                                    "enum": ["high", "medium", "low"],
+                                },
                             },
                         },
                         "description": "New todo items to add",
                     },
-                    "clear": {"type": "boolean", "description": "Clear all existing todos"},
+                    "clear": {
+                        "type": "boolean",
+                        "description": "Clear all existing todos",
+                    },
                 },
             },
         },
@@ -577,7 +681,10 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query"},
-                    "max_results": {"type": "integer", "description": "Max results (default 5)"},
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max results (default 5)",
+                    },
                 },
                 "required": ["query"],
             },
@@ -602,12 +709,18 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "function": {
             "name": "bash_background",
             "description": "Start a shell command in the background (dev servers, long builds, installs) "
-                           "and keep working. Returns a job_id to poll with job_output.",
+            "and keep working. Returns a job_id to poll with job_output.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The shell command to run in the background"},
-                    "workdir": {"type": "string", "description": "Optional working directory"},
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to run in the background",
+                    },
+                    "workdir": {
+                        "type": "string",
+                        "description": "Optional working directory",
+                    },
                 },
                 "required": ["command"],
             },
@@ -621,8 +734,14 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "job_id": {"type": "string", "description": "Job id returned by bash_background"},
-                    "tail": {"type": "integer", "description": "Last N lines to return (default 60)"},
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job id returned by bash_background",
+                    },
+                    "tail": {
+                        "type": "integer",
+                        "description": "Last N lines to return (default 60)",
+                    },
                 },
                 "required": ["job_id"],
             },
@@ -644,7 +763,10 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "job_id": {"type": "string", "description": "Job id returned by bash_background"},
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job id returned by bash_background",
+                    },
                 },
                 "required": ["job_id"],
             },
@@ -655,17 +777,31 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "function": {
             "name": "symbols",
             "description": "Query the project symbol index. Modes: find (default) lists definitions matching query; "
-                           "refs lists references to query; map returns a whole-project summary.",
+            "refs lists references to query; map returns a whole-project summary.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Symbol name (or substring) to look up"},
-                    "mode": {"type": "string", "enum": ["find", "refs", "map"],
-                             "description": "find=definitions, refs=usages, map=project overview (default find)"},
-                    "kind": {"type": "string",
-                             "description": "Optional kind filter (def/class/fn/func/struct/trait/...)"},
-                    "path": {"type": "string", "description": "Restrict results to files under this path substring"},
-                    "limit": {"type": "integer", "description": "Max results (default 25)"},
+                    "query": {
+                        "type": "string",
+                        "description": "Symbol name (or substring) to look up",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["find", "refs", "map"],
+                        "description": "find=definitions, refs=usages, map=project overview (default find)",
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Optional kind filter (def/class/fn/func/struct/trait/...)",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Restrict results to files under this path substring",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results (default 25)",
+                    },
                 },
             },
         },
@@ -709,6 +845,7 @@ _DESTRUCTIVE_CMD_RE = re.compile(
 def is_destructive(name: str, args: Dict[str, Any]) -> bool:
     """Heuristic: does this tool call mutate state destructively?"""
     from pycode.plugins import USER_DESTRUCTIVE
+
     if name in USER_DESTRUCTIVE:
         return True
     if name in _DESTRUCTIVE_TOOLS:
@@ -762,16 +899,29 @@ def dispatch_tool(
             text = p.read_text(encoding="utf-8")
             old = text.count(args.get("old_string", ""))
             if old == 0:
-                return json.dumps({"error": "old_string not found in file", "dry_run": True})
+                return json.dumps(
+                    {"error": "old_string not found in file", "dry_run": True}
+                )
             rep_all = args.get("replace_all", False)
-            new_text = text.replace(args.get("old_string", ""), args.get("new_string", "")) if rep_all \
-                else text.replace(args.get("old_string", ""), args.get("new_string", ""), 1)
-            return json.dumps({
-                "dry_run": True,
-                "path": str(p),
-                "diff": compute_diff(text, new_text, str(p)),
-            }, ensure_ascii=False, default=str)
-        return json.dumps({"error": f"File not found: {args.get('path','?')}", "dry_run": True})
+            new_text = (
+                text.replace(args.get("old_string", ""), args.get("new_string", ""))
+                if rep_all
+                else text.replace(
+                    args.get("old_string", ""), args.get("new_string", ""), 1
+                )
+            )
+            return json.dumps(
+                {
+                    "dry_run": True,
+                    "path": str(p),
+                    "diff": compute_diff(text, new_text, str(p)),
+                },
+                ensure_ascii=False,
+                default=str,
+            )
+        return json.dumps(
+            {"error": f"File not found: {args.get('path','?')}", "dry_run": True}
+        )
 
     # Gate destructive tools behind confirmation
     if not auto_approve and confirm is not None and is_destructive(name, args):

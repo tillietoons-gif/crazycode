@@ -17,25 +17,48 @@ from typing import Dict, List
 
 THEMES: Dict[str, Dict[str, str]] = {
     "default": {
-        "red": "31", "green": "32", "yellow": "33", "blue": "34",
-        "magenta": "35", "cyan": "36", "gray": "90",
+        "red": "31",
+        "green": "32",
+        "yellow": "33",
+        "blue": "34",
+        "magenta": "35",
+        "cyan": "36",
+        "gray": "90",
     },
     "mono": {
-        "red": "", "green": "", "yellow": "", "blue": "",
-        "magenta": "", "cyan": "", "gray": "",
+        "red": "",
+        "green": "",
+        "yellow": "",
+        "blue": "",
+        "magenta": "",
+        "cyan": "",
+        "gray": "",
     },
     "dracula": {
-        "red": "91", "green": "92", "yellow": "93", "blue": "94",
-        "magenta": "95", "cyan": "96", "gray": "90",
+        "red": "91",
+        "green": "92",
+        "yellow": "93",
+        "blue": "94",
+        "magenta": "95",
+        "cyan": "96",
+        "gray": "90",
     },
     "nord": {
-        "red": "38;5;174", "green": "38;5;150", "yellow": "38;5;179",
-        "blue": "38;5;109", "magenta": "38;5;139", "cyan": "38;5;116",
+        "red": "38;5;174",
+        "green": "38;5;150",
+        "yellow": "38;5;179",
+        "blue": "38;5;109",
+        "magenta": "38;5;139",
+        "cyan": "38;5;116",
         "gray": "38;5;102",
     },
     "solarized": {
-        "red": "38;5;160", "green": "38;5;64", "yellow": "38;5;136",
-        "blue": "38;5;33", "magenta": "38;5;125", "cyan": "38;5;37",
+        "red": "38;5;160",
+        "green": "38;5;64",
+        "yellow": "38;5;136",
+        "blue": "38;5;33",
+        "magenta": "38;5;125",
+        "cyan": "38;5;37",
         "gray": "38;5;244",
     },
 }
@@ -78,7 +101,9 @@ def apply_theme(name: str, force: bool = False) -> str:
     ``force`` is True. Raises ``ValueError`` for an unknown theme.
     """
     if name not in THEMES:
-        raise ValueError(f"unknown theme: {name!r} (have: {', '.join(available_themes())})")
+        raise ValueError(
+            f"unknown theme: {name!r} (have: {', '.join(available_themes())})"
+        )
 
     from pycode import tui
 
@@ -94,6 +119,9 @@ def apply_theme(name: str, force: bool = False) -> str:
 def theme_swatch(name: str = DEFAULT_THEME) -> str:
     """A one-line colored sample using every role in ``name``."""
     from pycode.tui import c
+
     name = resolve_theme(name)
-    return " ".join(c(role, role) for role in
-                    ("red", "green", "yellow", "blue", "magenta", "cyan", "gray"))
+    return " ".join(
+        c(role, role)
+        for role in ("red", "green", "yellow", "blue", "magenta", "cyan", "gray")
+    )

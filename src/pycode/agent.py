@@ -10,21 +10,22 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from pycode.provider import LLMProvider, accepts_kwarg
-from pycode.tui import dim
-from pycode.providers import get_preset, detect_preset, PRESETS
+from pycode import interrupts
 from pycode.context import find_context_files, load_context
-from pycode.context_manager import trim_messages, conversation_tokens, context_stats
-from pycode.session import save_session, load_session, latest_session
-from pycode.permissions import PermissionGuard, make_permission_confirm
-from pycode.rewind import RewindManager
-from pycode.subagents import SubagentRegistry, task_tool_schema
-from pycode.tui_subagent_trace import SubagentTrace
-from pycode.tools import TOOL_SCHEMAS, dispatch_tool
+from pycode.context_manager import (context_stats, conversation_tokens,
+                                    trim_messages)
 from pycode.cost import CostTracker
 from pycode.failover import FailoverProvider, ProviderConfig
 from pycode.hooks import hook_context
-from pycode import interrupts
+from pycode.permissions import PermissionGuard, make_permission_confirm
+from pycode.provider import LLMProvider, accepts_kwarg
+from pycode.providers import PRESETS, detect_preset, get_preset
+from pycode.rewind import RewindManager
+from pycode.session import latest_session, load_session, save_session
+from pycode.subagents import SubagentRegistry, task_tool_schema
+from pycode.tools import TOOL_SCHEMAS, dispatch_tool
+from pycode.tui import dim
+from pycode.tui_subagent_trace import SubagentTrace
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -69,6 +70,7 @@ def _build_system_prompt(extra: str = "") -> str:
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
+
 
 class Agent:
     """The main coding agent that orchestrates LLM calls and tool execution."""
@@ -136,9 +138,11 @@ class Agent:
         self.cost_tracker = CostTracker(model=self.provider.model)
         # Activity feed: append-only log of every tool call for the TUI
         from pycode.tui_feed import ActivityFeed
+
         self.feed = ActivityFeed(use_color=False)
         # Nested subagent traces for the TUI (one SubagentTrace per task call)
         from pycode.tui_subagent_trace import SubagentTrace
+
         self.subagent_traces: List[SubagentTrace] = []
         # Lifecycle hooks (pre_tool/post_tool/on_turn), attached by the CLI
         self.hooks = None
@@ -160,6 +164,7 @@ class Agent:
         if use_project_map:
             try:
                 from pycode.tools import get_project_index
+
                 idx = get_project_index(self.project_root)
                 if not idx.files:
                     idx.build()
@@ -217,14 +222,20 @@ class Agent:
         if self.mcp is not None:
             schemas.extend(self.mcp.all_schemas())
         if self.allowed_tools is not None:
-            schemas = [s for s in schemas if s.get("function", {}).get("name") in self.allowed_tools]
+            schemas = [
+                s
+                for s in schemas
+                if s.get("function", {}).get("name") in self.allowed_tools
+            ]
         return schemas
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def set_confirm(self, confirm: Optional[Callable[[str, Dict[str, Any]], bool]]) -> None:
+    def set_confirm(
+        self, confirm: Optional[Callable[[str, Dict[str, Any]], bool]]
+    ) -> None:
         """Set a confirmation callback for destructive tool calls."""
         self._confirm = confirm
 
@@ -232,8 +243,10 @@ class Agent:
         """Build the last-turn summary for the TUI panel."""
         try:
             from pycode.tui_turn import summarize_turn
+
             self.last_turn = summarize_turn(
-                tool_count, time.time() - started,
+                tool_count,
+                time.time() - started,
                 list(getattr(self, "_touched", [])),
                 self.project_root,
                 reasoning=reasoning_seen,
@@ -246,7 +259,9 @@ class Agent:
                 "reasoning": reasoning_seen,
             }
 
-    def run(self, user_input: str, interactive_review: bool = False, use_tui: bool = False) -> str:
+    def run(
+        self, user_input: str, interactive_review: bool = False, use_tui: bool = False
+    ) -> str:
         """Process user input and return the agent's final response.
 
         Args:
@@ -281,6 +296,7 @@ class Agent:
                 return "[aborted by user]"
             if self.verbose:
                 from pycode.tui import Spinner
+
                 with Spinner(f"thinking · iter {iteration}"):
                     try:
                         response = self._call_llm()
@@ -299,6 +315,7 @@ class Agent:
 
             if content and self.verbose:
                 from pycode.tui import print_assistant
+
                 if self._streamed:
                     print()  # finish the streamed line instead of re-printing
                 else:
@@ -308,8 +325,13 @@ class Agent:
             if reasoning:
                 turn_reasoning = True
                 if self.verbose:
-                    first = reasoning.splitlines()[0][:70] if reasoning.splitlines() else ""
-                    print(dim(f"  · thinking {len(reasoning)} chars: {first}"), file=sys.stderr)
+                    first = (
+                        reasoning.splitlines()[0][:70] if reasoning.splitlines() else ""
+                    )
+                    print(
+                        dim(f"  · thinking {len(reasoning)} chars: {first}"),
+                        file=sys.stderr,
+                    )
 
             assistant_msg: Dict[str, Any] = {"role": "assistant"}
             if content:
@@ -322,7 +344,9 @@ class Agent:
                 final = content or "[no response]"
                 # Apply staged dry-run changes (if any) before returning
                 if self.dry_run and self._pending_diffs:
-                    final += self._apply_pending_diffs(interactive=interactive_review, use_tui=use_tui)
+                    final += self._apply_pending_diffs(
+                        interactive=interactive_review, use_tui=use_tui
+                    )
                 self._pending_diffs = []
                 if self.self_review:
                     final += self._self_review_pass()
@@ -346,29 +370,42 @@ class Agent:
 
                 if self.verbose:
                     from pycode.tui import print_tool_start
+
                     print_tool_start(fn_name, json.dumps(args, default=str))
 
-                tool_allowed = ((fn_name != "task" or self.enable_subagents)
-                                and (self.allowed_tools is None or fn_name in self.allowed_tools))
+                tool_allowed = (fn_name != "task" or self.enable_subagents) and (
+                    self.allowed_tools is None or fn_name in self.allowed_tools
+                )
                 decision = self._permissions.check(fn_name, args)
                 if not tool_allowed or not decision.allowed:
-                    reason = (f"tool '{fn_name}' is not available to this agent"
-                              if not tool_allowed else decision.reason)
+                    reason = (
+                        f"tool '{fn_name}' is not available to this agent"
+                        if not tool_allowed
+                        else decision.reason
+                    )
                     turn_tools += 1
                     self.feed.begin(tc_id, fn_name, args)
-                    result = json.dumps({
-                        "error": f"Permission denied: {reason}",
-                        "tool": fn_name,
-                    }, ensure_ascii=False)
+                    result = json.dumps(
+                        {
+                            "error": f"Permission denied: {reason}",
+                            "tool": fn_name,
+                        },
+                        ensure_ascii=False,
+                    )
                     self.feed.end(tc_id, fn_name, args, result, ok=False)
-                    self._emit_hook("tool_denied", hook_context(fn_name, args, ok=False))
-                    self.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": result,
-                    })
+                    self._emit_hook(
+                        "tool_denied", hook_context(fn_name, args, ok=False)
+                    )
+                    self.messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": result,
+                        }
+                    )
                     if self.verbose:
                         from pycode.tui import print_permission_denied
+
                         print_permission_denied(fn_name, reason)
                     continue
 
@@ -380,6 +417,7 @@ class Agent:
                     trace.start(args.get("task", ""))
                     if self.verbose and sys.stderr.isatty():
                         from pycode.tui import Spinner
+
                         with Spinner("running task"):
                             result = self.subagents.run_task(
                                 task=args.get("task", ""),
@@ -403,11 +441,13 @@ class Agent:
                     self.subagent_traces.append(trace)
                     self._emit_hook("post_tool", hook_context("task", args, ok=True))
                     self.feed.end(tc_id, "task", args, result, ok=True, mcp=False)
-                    self.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": result,
-                    })
+                    self.messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": result,
+                        }
+                    )
                     continue
 
                 self.feed.begin(tc_id, fn_name, args)
@@ -415,13 +455,16 @@ class Agent:
                 # Live spinner while a tool runs — but never while a
                 # confirmation prompt is about to read stdin
                 from pycode.tools import is_destructive
+
                 needs_confirm = (
-                    self._confirm is not None and not self.auto_approve
+                    self._confirm is not None
+                    and not self.auto_approve
                     and is_destructive(fn_name, args)
                 )
                 turn_tools += 1
                 if self.verbose and sys.stderr.isatty() and not needs_confirm:
                     from pycode.tui import Spinner
+
                     with Spinner(f"running {fn_name}"):
                         result = dispatch_tool(
                             fn_name,
@@ -462,13 +505,16 @@ class Agent:
 
                 if self.verbose:
                     from pycode.tui import print_tool_result
+
                     print_tool_result(fn_name, ok, result)
 
-                self.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": result,
-                })
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": result,
+                    }
+                )
 
         self._end_turn(turn_tools, turn_started, turn_reasoning)
         return "[max iterations reached]"
@@ -559,9 +605,11 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
         # Double-quoted paths work on both POSIX shells and cmd.exe.
         diff_result = dispatch_tool(
             "bash",
-            {"command": "git diff --unified=3 -- " +
-                        " ".join(f'"{p}"' for p in sorted(set(touched))),
-             "workdir": self.project_root},
+            {
+                "command": "git diff --unified=3 -- "
+                + " ".join(f'"{p}"' for p in sorted(set(touched))),
+                "workdir": self.project_root,
+            },
             auto_approve=True,
         )
         try:
@@ -588,8 +636,10 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
             instruction = reply.split(":", 1)[1].strip()[:300]
             self.self_review = False  # exactly one revision, no re-review
             try:
-                self.run(f"A code review found problems in your last change: {instruction}. "
-                         f"Fix them now.")
+                self.run(
+                    f"A code review found problems in your last change: {instruction}. "
+                    f"Fix them now."
+                )
             finally:
                 self.self_review = True
             return f"\n\n[self-review] revision requested: {instruction}"
@@ -631,8 +681,12 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
                 f"Otherwise keep working: run builds/tests, fix what is broken, and verify."
             )
         achieved = bool(results) and self._loop_done(results[-1])
-        return {"goal": goal, "attempts": len(results),
-                "achieved": achieved, "results": results}
+        return {
+            "goal": goal,
+            "attempts": len(results),
+            "achieved": achieved,
+            "results": results,
+        }
 
     def _call_llm(self) -> Dict[str, Any]:
         """Call the LLM provider, falling back to non-streaming if needed.
@@ -663,7 +717,11 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
             result = self.provider.chat(self.messages, tools=schemas)
 
         # Record token usage for cost tracking
-        if isinstance(result, dict) and result.get("usage") and self.cost_tracker is not None:
+        if (
+            isinstance(result, dict)
+            and result.get("usage")
+            and self.cost_tracker is not None
+        ):
             self.cost_tracker.record(result.get("usage"))
         elif isinstance(result, str):
             result = {"content": result or "", "tool_calls": []}
@@ -685,7 +743,9 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
         """Reset conversation history, keeping the system prompt."""
         self.messages = [self.messages[0]]
 
-    def _apply_pending_diffs(self, interactive: bool = False, use_tui: bool = False) -> str:
+    def _apply_pending_diffs(
+        self, interactive: bool = False, use_tui: bool = False
+    ) -> str:
         """Apply staged dry-run changes via the DiffReviewer.
 
         When `use_tui` and `interactive` are both True, a keyboard-driven
@@ -697,6 +757,7 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
             return ""
         if interactive and use_tui and self._pending_diffs:
             from pycode.tui_diff_review import InteractiveDiffReviewer
+
             reviewer = InteractiveDiffReviewer(
                 pending=self._pending_diffs,
                 apply_fn=lambda tool, args: self._apply_change(tool, args),
@@ -708,6 +769,7 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
             rejected = summary.get("rejected", 0)
         else:
             from pycode.diff_reviewer import DiffReviewer
+
             reviewer = DiffReviewer(auto_approve=self.auto_approve)
             for change in self._pending_diffs:
                 reviewer.stage(change)
@@ -743,6 +805,7 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
         gate changes manually rather than auto-applying them.
         """
         from pycode.diff_reviewer import DiffReviewer
+
         reviewer = DiffReviewer(auto_approve=self.auto_approve)
         for change in self._pending_diffs:
             reviewer.stage(change)
@@ -762,7 +825,7 @@ Otherwise reply starting with LGTM, optionally followed by minor notes."""
 
     def turn_feed_entries(self) -> List[Any]:
         """Return activity entries recorded during the current turn."""
-        return self.feed.entries[getattr(self, "_turn_feed_start", 0):]
+        return self.feed.entries[getattr(self, "_turn_feed_start", 0) :]
 
     # ------------------------------------------------------------------
     # Rewind / branching

@@ -13,19 +13,15 @@ from unittest.mock import patch
 from pycode import provider as provider_mod
 from pycode.agent import Agent
 from pycode.config import _flatten, minimal_toml
-from pycode.hooks import (
-    HookRunner,
-    expand_template,
-    hook_context,
-)
+from pycode.hooks import HookRunner, expand_template, hook_context
 from pycode.jobs import JobManager
 from pycode.provider import LLMProvider, LLMProviderError, accepts_kwarg
 from pycode.tools import TOOL_SCHEMAS, TOOLS, dispatch_tool, is_destructive
 
-
 # ---------------------------------------------------------------------------
 # Background jobs
 # ---------------------------------------------------------------------------
+
 
 class TestJobManager(unittest.TestCase):
     def setUp(self):
@@ -112,6 +108,7 @@ class TestJobTools(unittest.TestCase):
 # Hooks
 # ---------------------------------------------------------------------------
 
+
 class TestHooks(unittest.TestCase):
     def test_expand_template(self):
         self.assertEqual(
@@ -123,13 +120,15 @@ class TestHooks(unittest.TestCase):
         self.assertEqual(expand_template("awk '{print $1}'", {}), "awk '{print $1}'")
 
     def test_from_config_filters_unknown_events(self):
-        runner = HookRunner.from_config({
-            "hooks": {
-                "post_tool": "echo done",
-                "bogus_event": "echo nope",
-                "on_turn": ["echo one", "echo two"],
+        runner = HookRunner.from_config(
+            {
+                "hooks": {
+                    "post_tool": "echo done",
+                    "bogus_event": "echo nope",
+                    "on_turn": ["echo one", "echo two"],
+                }
             }
-        })
+        )
         self.assertEqual(sorted(runner.commands), ["on_turn", "post_tool"])
         self.assertEqual(runner.commands["on_turn"], ["echo one", "echo two"])
         self.assertTrue(runner.enabled)
@@ -185,6 +184,7 @@ class TestConfigHooksSection(unittest.TestCase):
 # Real SSE streaming
 # ---------------------------------------------------------------------------
 
+
 class _FakeStreamResp:
     def __init__(self, lines, status_code=200):
         self._lines = lines
@@ -222,7 +222,8 @@ class TestSSEStreaming(unittest.TestCase):
         ]
         got = []
         with unittest.mock.patch.object(
-            provider_mod.requests, "post",
+            provider_mod.requests,
+            "post",
             return_value=_FakeStreamResp(lines),
         ):
             result = p.chat_stream(
@@ -244,8 +245,9 @@ class TestSSEStreaming(unittest.TestCase):
             '"function":{"arguments":"th\\":\\"x\\"}"}}]}}]}',
             "data: [DONE]",
         ]
-        with unittest.mock.patch.object(provider_mod.requests, "post",
-                                        return_value=_FakeStreamResp(lines)):
+        with unittest.mock.patch.object(
+            provider_mod.requests, "post", return_value=_FakeStreamResp(lines)
+        ):
             result = p.chat_stream([{"role": "user", "content": "hi"}])
         tc = result["tool_calls"][0]
         self.assertEqual(tc["id"], "call_1")
@@ -254,8 +256,9 @@ class TestSSEStreaming(unittest.TestCase):
 
     def test_empty_stream_falls_back_to_json(self):
         p = self._provider()
-        with unittest.mock.patch.object(provider_mod.requests, "post",
-                                        return_value=_FakeStreamResp([])) as post:
+        with unittest.mock.patch.object(
+            provider_mod.requests, "post", return_value=_FakeStreamResp([])
+        ) as post:
             result = p.chat_stream([{"role": "user", "content": "hi"}])
         # fallback used the plain JSON body
         self.assertEqual(result["content"], "plain-json")
@@ -271,8 +274,9 @@ class TestSSEStreaming(unittest.TestCase):
                 self.text = "denied"
 
         p = self._provider()
-        with unittest.mock.patch.object(provider_mod.requests, "post",
-                                        return_value=ErrResp()):
+        with unittest.mock.patch.object(
+            provider_mod.requests, "post", return_value=ErrResp()
+        ):
             with self.assertRaises(LLMProviderError):
                 p.chat_stream([{"role": "user", "content": "hi"}])
 
@@ -291,6 +295,7 @@ class TestSSEStreaming(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Plan mode
 # ---------------------------------------------------------------------------
+
 
 class _PlanProvider:
     model = "fake"

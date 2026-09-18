@@ -89,7 +89,9 @@ def trim_messages(
         return result
 
     # Second pass: drop oldest non-system, non-recent messages entirely
-    protect = set(range(system_count, system_count)) | set(range(len(result) - keep_recent, len(result)))
+    protect = set(range(system_count, system_count)) | set(
+        range(len(result) - keep_recent, len(result))
+    )
     dropped = []
     for i in range(system_count, len(result) - keep_recent):
         if i in protect:

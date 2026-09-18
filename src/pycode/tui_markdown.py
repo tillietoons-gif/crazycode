@@ -19,9 +19,15 @@ from typing import Dict, List, Optional
 
 def _ansicolors(enabled: bool = True) -> Dict[str, str]:
     default = {
-        "reset": "\033[0m", "bold": "\033[1m", "dim": "\033[2m",
-        "red": "\033[31m", "green": "\033[32m", "yellow": "\033[33m",
-        "blue": "\033[34m", "magenta": "\033[35m", "cyan": "\033[36m",
+        "reset": "\033[0m",
+        "bold": "\033[1m",
+        "dim": "\033[2m",
+        "red": "\033[31m",
+        "green": "\033[32m",
+        "yellow": "\033[33m",
+        "blue": "\033[34m",
+        "magenta": "\033[35m",
+        "cyan": "\033[36m",
         "gray": "\033[90m",
     }
     if not enabled:
@@ -79,11 +85,22 @@ _DEFAULT_KEYWORDS = _KEYWORDS["python"]
 
 # Language alias normalisation
 _ALIASES = {
-    "py": "python", "python3": "python", "python2": "python",
-    "javascript": "js", "mjs": "js", "jsx": "js", "cjs": "js",
-    "typescript": "ts", "tsx": "ts",
-    "sh": "bash", "zsh": "bash", "shell": "bash",
-    "rs": "rust", "golang": "go", "rb": "ruby", "rb": "python",
+    "py": "python",
+    "python3": "python",
+    "python2": "python",
+    "javascript": "js",
+    "mjs": "js",
+    "jsx": "js",
+    "cjs": "js",
+    "typescript": "ts",
+    "tsx": "ts",
+    "sh": "bash",
+    "zsh": "bash",
+    "shell": "bash",
+    "rs": "rust",
+    "golang": "go",
+    "rb": "ruby",
+    "rb": "python",
 }
 
 
@@ -95,9 +112,7 @@ def _norm_lang(lang: str) -> Optional[str]:
     return l if l in _KEYWORDS else None
 
 
-def _highlight_line(
-    line: str, lang: Optional[str], c: Dict[str, str]
-) -> str:
+def _highlight_line(line: str, lang: Optional[str], c: Dict[str, str]) -> str:
     """Single-pass tokenizer that colors strings, comments, keywords, and
     function-call identifiers."""
     kws = _KEYWORDS.get(lang or "", _DEFAULT_KEYWORDS)
@@ -142,7 +157,7 @@ def _highlight_line(
             while j < n and (line[j].isalnum() or line[j] == "_"):
                 j += 1
             word = line[i:j]
-            rest = line[j:j + 1]
+            rest = line[j : j + 1]
             if word in kws:
                 out.append(c["magenta"] + c["bold"] + word + c["reset"])
             elif rest == "(":
@@ -188,9 +203,7 @@ _LIST_RE = re.compile(r"^(\s*)([-*+]|\d+\.)\s+(.*)$")
 
 def _inline(text: str, c: Dict[str, str]) -> str:
     # inline code first (so its content isn't further formatted)
-    text = _INLINE_CODE_RE.sub(
-        lambda m: c["yellow"] + m.group(1) + c["reset"], text
-    )
+    text = _INLINE_CODE_RE.sub(lambda m: c["yellow"] + m.group(1) + c["reset"], text)
     text = _BOLD_RE.sub(lambda m: c["bold"] + m.group(2) + c["reset"], text)
     text = _ITALIC_RE.sub(lambda m: c["dim"] + m.group(2) + c["reset"], text)
     return text
@@ -199,6 +212,7 @@ def _inline(text: str, c: Dict[str, str]) -> str:
 # ---------------------------------------------------------------------------
 # Full document render
 # ---------------------------------------------------------------------------
+
 
 def render_markdown(text: str, use_color: bool = True, code_indent: str = "  ") -> str:
     """Render a markdown document to ANSI text.
@@ -217,7 +231,13 @@ def render_markdown(text: str, use_color: bool = True, code_indent: str = "  ") 
     def flush_code() -> None:
         if code_buf:
             block = "\n".join(code_buf)
-            out.append(c["dim"] + "──" + c["reset"] + " " + highlight_code(block, code_lang, use_color))
+            out.append(
+                c["dim"]
+                + "──"
+                + c["reset"]
+                + " "
+                + highlight_code(block, code_lang, use_color)
+            )
             code_buf.clear()
 
     for line in lines:

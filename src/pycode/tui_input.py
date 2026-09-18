@@ -17,7 +17,7 @@ import os
 import sys
 from typing import Callable, Optional
 
-from pycode.tui import c, dim, bold
+from pycode.tui import bold, c, dim
 
 INPUT_WIDTH = 58
 

@@ -87,6 +87,7 @@ def supports_esc(stream: Optional[TextIO] = None) -> bool:
     stream = stream or sys.stdin
     try:
         import termios  # noqa: F401
+
         return bool(stream.isatty())
     except Exception:  # noqa: BLE001
         return False
@@ -100,7 +101,9 @@ class EscListener:
     restored. On unsupported streams entering/exiting is a no-op.
     """
 
-    def __init__(self, controller: AbortController, stream: Optional[TextIO] = None) -> None:
+    def __init__(
+        self, controller: AbortController, stream: Optional[TextIO] = None
+    ) -> None:
         self.controller = controller
         self.stream = stream or sys.stdin
         self._stop = threading.Event()
@@ -115,6 +118,7 @@ class EscListener:
         try:
             import termios
             import tty
+
             self._fd = self.stream.fileno()
             self._saved = termios.tcgetattr(self._fd)
             tty.setcbreak(self._fd)
@@ -122,12 +126,15 @@ class EscListener:
             self._active = False
             return self
         self._active = True
-        self._thread = threading.Thread(target=self._watch, name="pycode-esc", daemon=True)
+        self._thread = threading.Thread(
+            target=self._watch, name="pycode-esc", daemon=True
+        )
         self._thread.start()
         return self
 
     def _watch(self) -> None:
         import select
+
         while not self._stop.is_set():
             try:
                 ready, _, _ = select.select([self._fd], [], [], 0.1)
@@ -152,6 +159,7 @@ class EscListener:
         if self._active and self._saved is not None and self._fd is not None:
             try:
                 import termios
+
                 termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved)
             except Exception:  # noqa: BLE001
                 pass

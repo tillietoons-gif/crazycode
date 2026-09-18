@@ -17,9 +17,23 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 SKIP_DIRS = {
-    ".git", "__pycache__", "node_modules", ".venv", "venv", "env",
-    "dist", "build", "target", "vendor", ".tox", ".mypy_cache",
-    ".pytest_cache", ".pycode", ".idea", ".vscode", "coverage",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "env",
+    "dist",
+    "build",
+    "target",
+    "vendor",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".pycode",
+    ".idea",
+    ".vscode",
+    "coverage",
 }
 
 MAX_FILES = 2000
@@ -34,18 +48,42 @@ SYMBOL_PATTERNS: Dict[str, List[tuple]] = {
         ("def", re.compile(r"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)")),
     ],
     ".js": [
-        ("class", re.compile(r"^\s*(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)")),
-        ("function", re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)")),
-        ("const", re.compile(r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\(|function)")),
+        (
+            "class",
+            re.compile(r"^\s*(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)"),
+        ),
+        (
+            "function",
+            re.compile(
+                r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)"
+            ),
+        ),
+        (
+            "const",
+            re.compile(
+                r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\(|function)"
+            ),
+        ),
     ],
     ".mjs": [],  # falls back to .js patterns via _patterns_for
     ".jsx": [],
     ".ts": [
-        ("class", re.compile(r"^\s*(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)")),
+        (
+            "class",
+            re.compile(r"^\s*(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)"),
+        ),
         ("interface", re.compile(r"^\s*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)")),
         ("type", re.compile(r"^\s*(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=")),
-        ("function", re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s*([A-Za-z_$][\w$]*)")),
-        ("const", re.compile(r"^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\(|function)")),
+        (
+            "function",
+            re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s*([A-Za-z_$][\w$]*)"),
+        ),
+        (
+            "const",
+            re.compile(
+                r"^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\(|function)"
+            ),
+        ),
     ],
     ".tsx": [],
     ".go": [
@@ -59,7 +97,12 @@ SYMBOL_PATTERNS: Dict[str, List[tuple]] = {
         ("trait", re.compile(r"^\s*(?:pub\s+)?trait\s+([A-Za-z_]\w*)")),
     ],
     ".java": [
-        ("class", re.compile(r"^\s*(?:public\s+|private\s+|protected\s+)?(?:final\s+|abstract\s+)*(?:class|interface|enum)\s+([A-Za-z_]\w*)")),
+        (
+            "class",
+            re.compile(
+                r"^\s*(?:public\s+|private\s+|protected\s+)?(?:final\s+|abstract\s+)*(?:class|interface|enum)\s+([A-Za-z_]\w*)"
+            ),
+        ),
     ],
     ".kt": [],
     ".rb": [
@@ -68,7 +111,10 @@ SYMBOL_PATTERNS: Dict[str, List[tuple]] = {
         ("def", re.compile(r"^\s*def\s+([A-Za-z_]\w*)")),
     ],
     ".c": [
-        ("function", re.compile(r"^[A-Za-z_][\w\s\*]*?\s\*?([A-Za-z_]\w*)\s*\([^;]*\)\s*\{")),
+        (
+            "function",
+            re.compile(r"^[A-Za-z_][\w\s\*]*?\s\*?([A-Za-z_]\w*)\s*\([^;]*\)\s*\{"),
+        ),
         ("struct", re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)")),
     ],
     ".h": [],
@@ -79,17 +125,35 @@ SYMBOL_PATTERNS: Dict[str, List[tuple]] = {
     ],
     ".php": [
         ("class", re.compile(r"^\s*(?:abstract\s+|final\s+)?class\s+([A-Za-z_]\w*)")),
-        ("function", re.compile(r"^\s*(?:public|private|protected)?\s*(?:static\s+)?function\s+([A-Za-z_]\w*)")),
+        (
+            "function",
+            re.compile(
+                r"^\s*(?:public|private|protected)?\s*(?:static\s+)?function\s+([A-Za-z_]\w*)"
+            ),
+        ),
     ],
 }
 
 # aliases: extension -> patterns source
 _ALIASES = {
-    ".mjs": ".js", ".jsx": ".js", ".tsx": ".ts", ".kt": ".java",
-    ".h": ".c", ".cpp": ".c", ".hpp": ".c",
+    ".mjs": ".js",
+    ".jsx": ".js",
+    ".tsx": ".ts",
+    ".kt": ".java",
+    ".h": ".c",
+    ".cpp": ".c",
+    ".hpp": ".c",
 }
 
-_TEXT_EXTS = set(SYMBOL_PATTERNS) | {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".sql"}
+_TEXT_EXTS = set(SYMBOL_PATTERNS) | {
+    ".md",
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".sql",
+}
 
 
 def patterns_for(ext: str) -> Optional[List[tuple]]:
@@ -130,8 +194,9 @@ def indexable(path: str) -> bool:
 class ProjectIndex:
     """Per-file symbol index with mtime cache."""
 
-    def __init__(self, root: str, cache_dir: Optional[str] = None,
-                 max_files: int = MAX_FILES):
+    def __init__(
+        self, root: str, cache_dir: Optional[str] = None, max_files: int = MAX_FILES
+    ):
         self.root = os.path.abspath(root)
         self.max_files = max_files
         self.cache_dir = Path(cache_dir or os.path.join(self.root, ".pycode", "index"))
@@ -144,7 +209,9 @@ class ProjectIndex:
     def _walk(self) -> Iterable[str]:
         count = 0
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+            dirnames[:] = [
+                d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
+            ]
             for fn in filenames:
                 if not indexable(fn):
                     continue
@@ -179,7 +246,9 @@ class ProjectIndex:
         known = set(self.files)
         live = set()
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+            dirnames[:] = [
+                d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
+            ]
             for fn in filenames:
                 live.add(os.path.join(dirpath, fn))
         for path in list(known - live):
@@ -199,9 +268,14 @@ class ProjectIndex:
     def save(self) -> None:
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            payload = {"version": _CACHE_VERSION, "root": self.root, "files": self.files}
+            payload = {
+                "version": _CACHE_VERSION,
+                "root": self.root,
+                "files": self.files,
+            }
             (self.cache_dir / "symbols.json").write_text(
-                json.dumps(payload), encoding="utf-8")
+                json.dumps(payload), encoding="utf-8"
+            )
         except OSError:
             pass
 
@@ -227,8 +301,9 @@ class ProjectIndex:
             out.extend(self.files[path].get("symbols", []))
         return out
 
-    def find(self, query: str, kind: Optional[str] = None,
-             limit: int = 25) -> List[Dict[str, Any]]:
+    def find(
+        self, query: str, kind: Optional[str] = None, limit: int = 25
+    ) -> List[Dict[str, Any]]:
         """Definitions whose name contains ``query`` (case-insensitive)."""
         q = query.lower()
         out = []

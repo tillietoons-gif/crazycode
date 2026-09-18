@@ -103,7 +103,12 @@ def _detect_project(root: Path) -> dict:
     for f in ("ruff.toml", ".ruff.toml"):
         if has(f):
             lints.append("ruff")
-    for f in ("eslint.config.js", "eslint.config.mjs", ".eslintrc.js", ".eslintrc.json"):
+    for f in (
+        "eslint.config.js",
+        "eslint.config.mjs",
+        ".eslintrc.js",
+        ".eslintrc.json",
+    ):
         if has(f):
             lints.append("eslint")
     if has(".prettierrc") or has("prettier.config.js"):
@@ -133,7 +138,9 @@ def generate(
     base = Path(root) if root else Path(os.getcwd())
     target = base / name
     if target.exists() and not overwrite:
-        raise FileExistsError(f"{target} already exists (use overwrite=True to replace)")
+        raise FileExistsError(
+            f"{target} already exists (use overwrite=True to replace)"
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(render_template(root=base), encoding="utf-8")
     return str(target)
@@ -146,15 +153,20 @@ def exists(root: Optional[str] = None, name: str = "CLAUDE.md") -> bool:
 
 def main(argv: Optional[List[str]] = None) -> int:
     import argparse
-    parser = argparse.ArgumentParser(description="Generate a pycode project-context file")
-    parser.add_argument("--name", default="CLAUDE.md",
-                        help="File name to create (default: CLAUDE.md)")
-    parser.add_argument("--root", default=".",
-                        help="Project root (default: cwd)")
-    parser.add_argument("--force", action="store_true",
-                        help="Overwrite if the file exists")
-    parser.add_argument("--show", action="store_true",
-                        help="Print to stdout instead of writing")
+
+    parser = argparse.ArgumentParser(
+        description="Generate a pycode project-context file"
+    )
+    parser.add_argument(
+        "--name", default="CLAUDE.md", help="File name to create (default: CLAUDE.md)"
+    )
+    parser.add_argument("--root", default=".", help="Project root (default: cwd)")
+    parser.add_argument(
+        "--force", action="store_true", help="Overwrite if the file exists"
+    )
+    parser.add_argument(
+        "--show", action="store_true", help="Print to stdout instead of writing"
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root)

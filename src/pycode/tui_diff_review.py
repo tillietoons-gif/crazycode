@@ -21,8 +21,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from pycode.diff_reviewer import DiffReviewer
-from pycode.tui import c, dim, bold
-
+from pycode.tui import bold, c, dim
 
 HELP = (
     "  keys:\n"
@@ -61,7 +60,12 @@ class InteractiveDiffReviewer:
         self._apply = apply_fn
         self.use_color = use_color
         self.show_diff = not default_hide_diff
-        self.summary = {"approved": 0, "rejected": 0, "held": 0, "total": len(self.pending)}
+        self.summary = {
+            "approved": 0,
+            "rejected": 0,
+            "held": 0,
+            "total": len(self.pending),
+        }
 
     # ------------------------------------------------------------------
     # Per-change rendering
@@ -83,7 +87,9 @@ class InteractiveDiffReviewer:
                 out.append(ln)
         return "\n".join(out)
 
-    def _render_prompt(self, idx: int, total: int, change: Dict[str, Any], show: bool) -> str:
+    def _render_prompt(
+        self, idx: int, total: int, change: Dict[str, Any], show: bool
+    ) -> str:
         path = change.get("path", "(unknown)")
         head = f"\n{bold(c('cyan', f'[{idx}/{total}]'))} {path}"
         block = head + "\n"
@@ -110,7 +116,7 @@ class InteractiveDiffReviewer:
                 raw = _readline_on_tty()
                 if raw is None:
                     # EOF / Ctrl-C -> reject remaining, stop
-                    self.summary["rejected"] += (n - i)
+                    self.summary["rejected"] += n - i
                     i = n
                     break
                 key = raw.strip().lower()
@@ -133,14 +139,16 @@ class InteractiveDiffReviewer:
                     i += 1
                     break
                 elif key == "q":
-                    self.summary["rejected"] += (n - i)
+                    self.summary["rejected"] += n - i
                     i = n
                     break
                 elif key in ("?", "h", "help"):
                     print(HELP, file=sys.stderr, flush=True)
                     continue
                 else:
-                    print(dim(f"  (press a/r/h/n/q/? — '{raw}' ignored)"), file=sys.stderr)
+                    print(
+                        dim(f"  (press a/r/h/n/q/? — '{raw}' ignored)"), file=sys.stderr
+                    )
                     continue
             if hold_all:
                 # auto-apply the rest

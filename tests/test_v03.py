@@ -8,15 +8,13 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
-from pycode.providers import PRESETS, get_preset, detect_preset
-from pycode.context_manager import (
-    estimate_tokens, conversation_tokens, trim_messages, context_stats,
-)
-from pycode.mcp import MCPRegistry, MCPServer
-from pycode.tools import (
-    dispatch_tool, dry_run_diff, compute_diff, is_destructive,
-)
 from pycode.agent import Agent
+from pycode.context_manager import (context_stats, conversation_tokens,
+                                    estimate_tokens, trim_messages)
+from pycode.mcp import MCPRegistry, MCPServer
+from pycode.providers import PRESETS, detect_preset, get_preset
+from pycode.tools import (compute_diff, dispatch_tool, dry_run_diff,
+                          is_destructive)
 
 
 class TestProviderPresets(unittest.TestCase):
@@ -42,7 +40,9 @@ class TestProviderPresets(unittest.TestCase):
             get_preset("nonexistent")
 
     def test_detect_preset_uses_env(self):
-        with unittest.mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-xyz"}, clear=False):
+        with unittest.mock.patch.dict(
+            os.environ, {"OPENAI_API_KEY": "sk-xyz"}, clear=False
+        ):
             cfg = detect_preset()
             self.assertEqual(cfg.get("api_key"), "sk-xyz")
             self.assertIn("api_base", cfg)
@@ -89,8 +89,9 @@ class TestDryRunDiff(unittest.TestCase):
     def test_dry_run_write_new_file(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "new.txt")
-            result = json.loads(dispatch_tool("write", {"path": p, "content": "hello"},
-                                              dry_run=True))
+            result = json.loads(
+                dispatch_tool("write", {"path": p, "content": "hello"}, dry_run=True)
+            )
             self.assertTrue(result["dry_run"])
             self.assertFalse(result["existed_before"])
             self.assertIn("+hello", result["diff"])
@@ -102,8 +103,11 @@ class TestDryRunDiff(unittest.TestCase):
             p = os.path.join(d, "f.txt")
             with open(p, "w") as f:
                 f.write("line1\nline2\n")
-            result = json.loads(dispatch_tool("write", {"path": p, "content": "line1\nlineX\n"},
-                                              dry_run=True))
+            result = json.loads(
+                dispatch_tool(
+                    "write", {"path": p, "content": "line1\nlineX\n"}, dry_run=True
+                )
+            )
             self.assertTrue(result["dry_run"])
             self.assertTrue(result["existed_before"])
             self.assertIn("-line2", result["diff"])
@@ -117,9 +121,13 @@ class TestDryRunDiff(unittest.TestCase):
             p = os.path.join(d, "f.py")
             with open(p, "w") as f:
                 f.write("x = 1\n")
-            result = json.loads(dispatch_tool(
-                "edit", {"path": p, "old_string": "x = 1", "new_string": "x = 2"},
-                dry_run=True))
+            result = json.loads(
+                dispatch_tool(
+                    "edit",
+                    {"path": p, "old_string": "x = 1", "new_string": "x = 2"},
+                    dry_run=True,
+                )
+            )
             self.assertTrue(result["dry_run"])
             self.assertIn("-x = 1", result["diff"])
             self.assertIn("+x = 2", result["diff"])
@@ -148,10 +156,12 @@ class TestMCPRegistry(unittest.TestCase):
         # dispatch routes to the server; registry strips the mcp_<name>_ prefix
         # so the server receives the clean tool name
         captured = {}
+
         def fake_call(tool_name, arguments):
             captured["tool"] = tool_name
             captured["args"] = arguments
             return "hello from mcp"
+
         server.call_tool = fake_call
         out = reg.dispatch("mcp_demo_greet", {"who": "world"})
         self.assertEqual(out, "hello from mcp")
@@ -174,6 +184,7 @@ class TestAgentDryRunAndMCP(unittest.TestCase):
         agent.attach_mcp(reg)
         self.assertIs(agent.mcp, reg)
         from pycode.tools import TOOL_SCHEMAS
+
         self.assertEqual(len(agent._all_tool_schemas()), len(TOOL_SCHEMAS))
 
 

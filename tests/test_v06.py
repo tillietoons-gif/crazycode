@@ -8,16 +8,17 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
+from pycode.agent import Agent
 from pycode.cost import CostTracker, TokenUsage, pricing_for
 from pycode.failover import FailoverProvider, ProviderConfig
-from pycode.provider import LLMProvider, LLMProviderError, build_cached_system_messages
-from pycode.tools import dispatch_tool, TOOL_SCHEMAS, TOOLS
-from pycode.agent import Agent
-
+from pycode.provider import (LLMProvider, LLMProviderError,
+                             build_cached_system_messages)
+from pycode.tools import TOOL_SCHEMAS, TOOLS, dispatch_tool
 
 # ---------------------------------------------------------------------------
 # Cost tracking
 # ---------------------------------------------------------------------------
+
 
 class TestCostTracker(unittest.TestCase):
     def test_pricing_for_known_model(self):
@@ -42,12 +43,14 @@ class TestCostTracker(unittest.TestCase):
     def test_cached_tokens_discounted(self):
         t = CostTracker(model="gpt-4o")
         # 1M prompt tokens, all cached -> should cost ~10% of 1M * 2.50 = $2.50
-        t.record({
-            "prompt_tokens": 1_000_000,
-            "completion_tokens": 0,
-            "total_tokens": 1_000_000,
-            "prompt_tokens_details": {"cached_tokens": 1_000_000},
-        })
+        t.record(
+            {
+                "prompt_tokens": 1_000_000,
+                "completion_tokens": 0,
+                "total_tokens": 1_000_000,
+                "prompt_tokens_details": {"cached_tokens": 1_000_000},
+            }
+        )
         # cached: 1M * 2.50 * 0.1 / 1M = 0.25 ; fresh prompt = 0
         self.assertAlmostEqual(t.session_cost(), 0.25, places=3)
 
@@ -69,8 +72,14 @@ class TestCostTracker(unittest.TestCase):
     def test_summary_shape(self):
         t = CostTracker(model="gpt-4o")
         s = t.summary()
-        for key in ("model", "turns", "session_tokens", "session_cost_usd",
-                    "last_turn_tokens", "last_turn_cost_usd"):
+        for key in (
+            "model",
+            "turns",
+            "session_tokens",
+            "session_cost_usd",
+            "last_turn_tokens",
+            "last_turn_cost_usd",
+        ):
             self.assertIn(key, s)
 
     def test_reset(self):
@@ -82,13 +91,20 @@ class TestCostTracker(unittest.TestCase):
 
     def test_local_model_free(self):
         t = CostTracker(model="llama3.1:8b")
-        t.record({"prompt_tokens": 100000, "completion_tokens": 50000, "total_tokens": 150000})
+        t.record(
+            {
+                "prompt_tokens": 100000,
+                "completion_tokens": 50000,
+                "total_tokens": 150000,
+            }
+        )
         self.assertEqual(t.session_cost(), 0.0)
 
 
 # ---------------------------------------------------------------------------
 # Failover
 # ---------------------------------------------------------------------------
+
 
 class _FakeProvider:
     """Stands in for LLMProvider inside a ProviderConfig for testing."""
@@ -105,7 +121,8 @@ class _FakeProvider:
         return {
             "content": f"reply from {self.model}",
             "tool_calls": [],
-            "usage": self._usage or {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            "usage": self._usage
+            or {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         }
 
 
@@ -180,6 +197,7 @@ class TestFailover(unittest.TestCase):
 # Prompt caching
 # ---------------------------------------------------------------------------
 
+
 class TestPromptCaching(unittest.TestCase):
     def test_stable_system_prefix(self):
         msgs = build_cached_system_messages(
@@ -210,6 +228,7 @@ class TestPromptCaching(unittest.TestCase):
 # Web search + vision
 # ---------------------------------------------------------------------------
 
+
 class TestWebSearchAndVision(unittest.TestCase):
     def test_tools_registered(self):
         self.assertIn("web_search", TOOLS)
@@ -225,6 +244,7 @@ class TestWebSearchAndVision(unittest.TestCase):
     def test_view_image_reads_real_file(self):
         # write a tiny 1x1 PNG (1 byte signature + a few bytes)
         import struct
+
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             # minimal PNG header + IHDR + IEND (enough for mime sniffing)
             f.write(b"\x89PNG\r\n\x1a\n")
@@ -240,7 +260,9 @@ class TestWebSearchAndVision(unittest.TestCase):
     def test_web_search_returns_graceful_error_offline(self):
         # In a sandboxed test env the network may be unavailable; we only assert
         # the shape, not the content.
-        out = json.loads(dispatch_tool("web_search", {"query": "pycode", "max_results": 1}))
+        out = json.loads(
+            dispatch_tool("web_search", {"query": "pycode", "max_results": 1})
+        )
         self.assertIn("query", out)
         self.assertIn("results", out)
 
@@ -248,6 +270,7 @@ class TestWebSearchAndVision(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Agent cost tracking integration
 # ---------------------------------------------------------------------------
+
 
 class TestAgentCostIntegration(unittest.TestCase):
     def test_agent_records_usage_on_llm_call(self):
@@ -258,7 +281,11 @@ class TestAgentCostIntegration(unittest.TestCase):
             return_value={
                 "content": "done",
                 "tool_calls": [],
-                "usage": {"prompt_tokens": 200, "completion_tokens": 80, "total_tokens": 280},
+                "usage": {
+                    "prompt_tokens": 200,
+                    "completion_tokens": 80,
+                    "total_tokens": 280,
+                },
             }
         )
         agent.provider.model = "gpt-4o"

@@ -21,8 +21,12 @@ from typing import Any, Dict, List, Optional
 class JobManager:
     """Tracks background shell processes started by the agent."""
 
-    def __init__(self, output_dir: Optional[str] = None, max_output_bytes: int = 200_000):
-        self.output_dir = Path(output_dir or os.path.join(tempfile.gettempdir(), "pycode-jobs"))
+    def __init__(
+        self, output_dir: Optional[str] = None, max_output_bytes: int = 200_000
+    ):
+        self.output_dir = Path(
+            output_dir or os.path.join(tempfile.gettempdir(), "pycode-jobs")
+        )
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.max_output_bytes = max_output_bytes
         self._jobs: Dict[str, Dict[str, Any]] = {}
@@ -60,7 +64,12 @@ class JobManager:
             "output_path": str(out_path),
             "started": time.time(),
         }
-        return {"ok": True, "job_id": job_id, "command": command, "output_path": str(out_path)}
+        return {
+            "ok": True,
+            "job_id": job_id,
+            "command": command,
+            "output_path": str(out_path),
+        }
 
     def _entry_status(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         proc = entry["proc"]
@@ -75,7 +84,11 @@ class JobManager:
         entry = self._jobs.get(job_id)
         if entry is None:
             return {"error": f"unknown job: {job_id}"}
-        out = {"job_id": job_id, "command": entry["command"], **self._entry_status(entry)}
+        out = {
+            "job_id": job_id,
+            "command": entry["command"],
+            **self._entry_status(entry),
+        }
         return out
 
     def output(self, job_id: str, tail: int = 60) -> Dict[str, Any]:
@@ -85,7 +98,7 @@ class JobManager:
             return {"error": f"unknown job: {job_id}"}
         out = self.status(job_id)
         try:
-            data = Path(entry["output_path"]).read_bytes()[-self.max_output_bytes:]
+            data = Path(entry["output_path"]).read_bytes()[-self.max_output_bytes :]
             lines = data.decode("utf-8", errors="replace").splitlines()
         except OSError:
             lines = []

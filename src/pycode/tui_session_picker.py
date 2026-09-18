@@ -52,8 +52,14 @@ def collect_sessions(root: Optional[str] = None) -> List[SessionMeta]:
         try:
             st = os.stat(p)
             msgs = load_session(p)
-            out.append(SessionMeta(path=p, mtime=st.st_mtime, msg_count=len(msgs),
-                                   preview=_preview(msgs)))
+            out.append(
+                SessionMeta(
+                    path=p,
+                    mtime=st.st_mtime,
+                    msg_count=len(msgs),
+                    preview=_preview(msgs),
+                )
+            )
         except Exception as exc:  # noqa: BLE001
             print(f"  warn: could not load session {p}: {exc}", file=sys.stderr)
             continue
@@ -91,7 +97,9 @@ def _curses_pick(items: List[SessionMeta]) -> int:
         tty.setraw(fd)
         while True:
             sys.stdout.write("\033[H\033[J")  # clear screen + scroll region
-            print("  Select a session to resume (↑/↓ or j/k to move, Enter to pick, q to cancel)")
+            print(
+                "  Select a session to resume (↑/↓ or j/k to move, Enter to pick, q to cancel)"
+            )
             for i, s in enumerate(items):
                 print(_render_line(i, sel, s, n))
             key = _read_key()
@@ -113,7 +121,9 @@ def _text_pick(items: List[SessionMeta]) -> int:
     n = len(items)
     print("  Sessions (type a number to resume, Enter for latest, q to cancel):")
     for i, s in enumerate(items):
-        print(f"    {i + 1}/{n}  {s.timestamp_str()}  {s.short_name}  ({s.msg_count} msgs)  {s.preview}")
+        print(
+            f"    {i + 1}/{n}  {s.timestamp_str()}  {s.short_name}  ({s.msg_count} msgs)  {s.preview}"
+        )
     try:
         ans = input("  ").strip()
     except (EOFError, KeyboardInterrupt):

@@ -20,12 +20,12 @@ import json
 import sys
 from typing import Any, Callable, Dict, List, Optional
 
-from pycode.tools import dry_run_diff, dispatch_tool
-
+from pycode.tools import dispatch_tool, dry_run_diff
 
 # ---------------------------------------------------------------------------
 # Colorized diff rendering
 # ---------------------------------------------------------------------------
+
 
 def _color_line(line: str, use_color: bool) -> str:
     """Colorize a single diff line."""
@@ -74,7 +74,9 @@ def _prompt_decision(index: int, total: int, path: str, diff_text: str) -> str:
     print(render_diff(diff_text), file=sys.stderr)
     print(file=sys.stderr)
     try:
-        answer = input("  approve this change? [a]pprove / [r]eject / [h]old-all / Enter=a [a] ")
+        answer = input(
+            "  approve this change? [a]pprove / [r]eject / [h]old-all / Enter=a [a] "
+        )
     except (EOFError, KeyboardInterrupt):
         return DECISION_REJECT
     answer = answer.strip().lower()
@@ -89,6 +91,7 @@ def _prompt_decision(index: int, total: int, path: str, diff_text: str) -> str:
 # Reviewer
 # ---------------------------------------------------------------------------
 
+
 class DiffReviewer:
     """Collects pending dry-run changes and lets the user review each one.
 
@@ -99,7 +102,11 @@ class DiffReviewer:
         reviewer.review()               # interactive, applies approved ones
     """
 
-    def __init__(self, auto_approve: bool = False, apply: Optional[Callable[[str, Dict[str, Any]], None]] = None):
+    def __init__(
+        self,
+        auto_approve: bool = False,
+        apply: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    ):
         self.pending: List[Dict[str, Any]] = []
         self.auto_approve = auto_approve
         # apply(tool_name, args) -> None; defaults to re-running dispatch_tool
@@ -146,7 +153,10 @@ class DiffReviewer:
         return summary
 
 
-def review_single(change: Dict[str, Any], apply_fn: Optional[Callable[[str, Dict[str, Any]], None]] = None) -> str:
+def review_single(
+    change: Dict[str, Any],
+    apply_fn: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+) -> str:
     """Review one staged change; returns the decision taken."""
     r = DiffReviewer(apply=apply_fn)
     r.stage(change)

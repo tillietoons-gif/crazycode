@@ -53,6 +53,7 @@ def _plugin_dir(root: str, kind: str) -> Path:
 # Python tool SDK
 # ---------------------------------------------------------------------------
 
+
 def load_user_tools(root: str) -> List[Dict[str, Any]]:
     """Load ``.pycode/tools/*.py`` modules exposing SCHEMA + run(args)."""
     tools_dir = _plugin_dir(root, "tools")
@@ -62,7 +63,9 @@ def load_user_tools(root: str) -> List[Dict[str, Any]]:
     for path in sorted(tools_dir.glob("*.py")):
         entry: Dict[str, Any] = {"path": str(path)}
         try:
-            spec = importlib.util.spec_from_file_location(f"pycode_user_{path.stem}", path)
+            spec = importlib.util.spec_from_file_location(
+                f"pycode_user_{path.stem}", path
+            )
             assert spec is not None and spec.loader is not None
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
@@ -73,8 +76,14 @@ def load_user_tools(root: str) -> List[Dict[str, Any]]:
             name = schema.get("function", {}).get("name", "")
             if not name:
                 raise ValueError("SCHEMA is missing function.name")
-            entry.update({"name": name, "schema": schema, "run": run,
-                          "destructive": bool(getattr(module, "DESTRUCTIVE", False))})
+            entry.update(
+                {
+                    "name": name,
+                    "schema": schema,
+                    "run": run,
+                    "destructive": bool(getattr(module, "DESTRUCTIVE", False)),
+                }
+            )
         except Exception as exc:  # noqa: BLE001 - report, never fatal
             entry["error"] = str(exc)
         out.append(entry)
@@ -83,8 +92,10 @@ def load_user_tools(root: str) -> List[Dict[str, Any]]:
 
 def _wrap_user_run(run: Any) -> Any:
     """Adapt a plugin's ``run(args)`` to the dispatcher's ``fn(**args)`` call."""
+
     def wrapper(**kwargs):
         return run(kwargs)
+
     wrapper.__name__ = getattr(run, "__name__", "user_run")
     return wrapper
 
@@ -95,6 +106,7 @@ def register_user_tools(root: str) -> Dict[str, Any]:
     Built-in names win: a plugin named like an existing tool is skipped.
     """
     from pycode import tools as tools_mod
+
     loaded: List[str] = []
     errors: List[Dict[str, str]] = []
     for entry in load_user_tools(root):
@@ -103,8 +115,12 @@ def register_user_tools(root: str) -> Dict[str, Any]:
             errors.append({"path": entry["path"], "error": entry.get("error", "?")})
             continue
         if name in tools_mod.TOOLS:
-            errors.append({"path": entry["path"],
-                           "error": f"name {name!r} collides with a built-in tool"})
+            errors.append(
+                {
+                    "path": entry["path"],
+                    "error": f"name {name!r} collides with a built-in tool",
+                }
+            )
             continue
         tools_mod.TOOLS[name] = _wrap_user_run(entry["run"])
         tools_mod.TOOL_SCHEMAS.append(entry["schema"])
@@ -118,6 +134,7 @@ def register_user_tools(root: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Custom slash commands
 # ---------------------------------------------------------------------------
+
 
 def load_user_commands(root: str) -> Dict[str, Dict[str, str]]:
     """Load ``.pycode/commands/*.md`` as name -> {path, template}."""
@@ -144,6 +161,7 @@ def apply_command(template: str, args: str) -> str:
 # Tool-file hooks
 # ---------------------------------------------------------------------------
 
+
 def collect_user_hooks(root: str) -> Dict[str, List[str]]:
     """Merge ``HOOKS`` dicts from tool plugin modules (best-effort).
 
@@ -156,7 +174,8 @@ def collect_user_hooks(root: str) -> Dict[str, List[str]]:
             continue
         try:
             spec = importlib.util.spec_from_file_location(
-                f"pycode_user_hooks_{Path(entry['path']).stem}", entry["path"])
+                f"pycode_user_hooks_{Path(entry['path']).stem}", entry["path"]
+            )
             assert spec is not None and spec.loader is not None
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
@@ -174,7 +193,9 @@ def collect_user_hooks(root: str) -> Dict[str, List[str]]:
     return hooks
 
 
-def merge_hooks(base: Dict[str, List[str]], extra: Dict[str, List[str]]) -> Dict[str, List[str]]:
+def merge_hooks(
+    base: Dict[str, List[str]], extra: Dict[str, List[str]]
+) -> Dict[str, List[str]]:
     """Return base hooks extended with extra (does not mutate base)."""
     out = {event: list(cmds) for event, cmds in base.items()}
     for event, cmds in extra.items():

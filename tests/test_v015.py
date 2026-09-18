@@ -9,21 +9,13 @@ import os
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout, redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 
 from pycode.agent import Agent
-from pycode.tui_input import (
-    bottom_border,
-    read_input,
-    supports_box,
-    top_border,
-)
-from pycode.tui_turn import (
-    render_summary,
-    summarize_turn,
-    _fmt_stat,
-    _git_numstat,
-)
+from pycode.tui_input import (bottom_border, read_input, supports_box,
+                              top_border)
+from pycode.tui_turn import (_fmt_stat, _git_numstat, render_summary,
+                             summarize_turn)
 
 
 def _git_repo(root):
@@ -35,6 +27,7 @@ def _git_repo(root):
 # ---------------------------------------------------------------------------
 # Input box
 # ---------------------------------------------------------------------------
+
 
 class TestInputBox(unittest.TestCase):
     def test_top_border_shape(self):
@@ -53,7 +46,10 @@ class TestInputBox(unittest.TestCase):
         outputs = io.StringIO()
         with redirect_stdout(outputs):
             line = read_input(
-                input_fn=lambda prompt: (outputs.write("PROMPT:" + prompt), "hello box")[-1],
+                input_fn=lambda prompt: (
+                    outputs.write("PROMPT:" + prompt),
+                    "hello box",
+                )[-1],
                 use_box=True,
             )
         self.assertEqual(line, "hello box")
@@ -95,6 +91,7 @@ class TestInputBox(unittest.TestCase):
 # Turn summary
 # ---------------------------------------------------------------------------
 
+
 class TestTurnSummary(unittest.TestCase):
     def test_fmt_stat(self):
         self.assertEqual(_fmt_stat(3, None), "+3")
@@ -130,7 +127,8 @@ class TestTurnSummary(unittest.TestCase):
 
     def test_render_with_files(self):
         summary = {
-            "tool_calls": 2, "duration_s": 3.4,
+            "tool_calls": 2,
+            "duration_s": 3.4,
             "files": [{"path": "src/app.py", "add": 12, "del": 3}],
             "reasoning": True,
         }
@@ -144,8 +142,10 @@ class TestTurnSummary(unittest.TestCase):
         self.assertIn("reasoned", text)
 
     def test_render_headless(self):
-        text = render_summary({"tool_calls": 0, "duration_s": 0.0,
-                               "files": [], "reasoning": False}, width=40)
+        text = render_summary(
+            {"tool_calls": 0, "duration_s": 0.0, "files": [], "reasoning": False},
+            width=40,
+        )
         self.assertIn("╰", text)
         self.assertNotIn("✎", text)
 
@@ -162,13 +162,32 @@ class TestAgentLastTurn(unittest.TestCase):
             def chat_stream(self, messages, tools=None, **kw):
                 _P.calls += 1
                 if _P.calls == 1:
-                    return {"content": "", "tool_calls": [{
-                        "id": "1", "type": "function",
-                        "function": {"name": "write",
-                                     "arguments": json.dumps({"path": os.path.join(root, "f.txt"),
-                                                              "content": "hello"})},
-                    }], "usage": {}, "reasoning": ""}
-                return {"content": "done", "tool_calls": [], "usage": {}, "reasoning": ""}
+                    return {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "1",
+                                "type": "function",
+                                "function": {
+                                    "name": "write",
+                                    "arguments": json.dumps(
+                                        {
+                                            "path": os.path.join(root, "f.txt"),
+                                            "content": "hello",
+                                        }
+                                    ),
+                                },
+                            }
+                        ],
+                        "usage": {},
+                        "reasoning": "",
+                    }
+                return {
+                    "content": "done",
+                    "tool_calls": [],
+                    "usage": {},
+                    "reasoning": "",
+                }
 
         agent.provider = _P()
         return agent
@@ -190,8 +209,12 @@ class TestAgentLastTurn(unittest.TestCase):
             def stream(messages, tools=None, **kw):
                 agent.provider.calls += 1
                 if agent.provider.calls == 1:
-                    return {"content": "", "tool_calls": [], "usage": {},
-                            "reasoning": "pondering"}
+                    return {
+                        "content": "",
+                        "tool_calls": [],
+                        "usage": {},
+                        "reasoning": "pondering",
+                    }
                 return {"content": "ok", "tool_calls": [], "usage": {}, "reasoning": ""}
 
             agent.provider.chat_stream = stream

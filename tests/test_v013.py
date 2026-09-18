@@ -23,8 +23,15 @@ SSE_LINES = [
 ]
 
 NONSTREAM_JSON = {
-    "choices": [{"message": {"content": "ok", "reasoning_content": "because reasons",
-                             "tool_calls": []}}],
+    "choices": [
+        {
+            "message": {
+                "content": "ok",
+                "reasoning_content": "because reasons",
+                "tool_calls": [],
+            }
+        }
+    ],
     "usage": {"total_tokens": 9},
 }
 
@@ -52,14 +59,17 @@ class _FakeStreamResp:
 # Reasoning / thinking models
 # ---------------------------------------------------------------------------
 
+
 class TestReasoningStreaming(unittest.TestCase):
     def test_consume_sse_collects_reasoning(self):
         p = LLMProvider(api_key="k", api_base="http://x", model="m")
         got = []
-        with unittest.mock.patch.object(provider_mod.requests, "post",
-                                        return_value=_FakeStreamResp(SSE_LINES)):
-            result = p.chat_stream([{"role": "user", "content": "q"}],
-                                   on_reasoning=got.append)
+        with unittest.mock.patch.object(
+            provider_mod.requests, "post", return_value=_FakeStreamResp(SSE_LINES)
+        ):
+            result = p.chat_stream(
+                [{"role": "user", "content": "q"}], on_reasoning=got.append
+            )
         self.assertEqual(result["reasoning"], "Let me think. more.")
         self.assertEqual(result["content"], "Answer")
         self.assertEqual(got, ["Let me think.", " more."])
@@ -74,8 +84,9 @@ class TestReasoningStreaming(unittest.TestCase):
             def json(self):
                 return NONSTREAM_JSON
 
-        with unittest.mock.patch.object(provider_mod.requests, "post",
-                                        return_value=Resp()):
+        with unittest.mock.patch.object(
+            provider_mod.requests, "post", return_value=Resp()
+        ):
             result = p.chat_stream([{"role": "user", "content": "q"}])
         # empty SSE -> falls back to the plain JSON body, which carries reasoning
         self.assertEqual(result["reasoning"], "because reasons")
@@ -88,11 +99,11 @@ class TestReasoningStreaming(unittest.TestCase):
             text = ""
 
             def json(self):
-                return {"choices": [{"message": {"content": "plain"}}],
-                        "usage": {}}
+                return {"choices": [{"message": {"content": "plain"}}], "usage": {}}
 
-        with unittest.mock.patch.object(provider_mod.requests, "post",
-                                        return_value=Resp()):
+        with unittest.mock.patch.object(
+            provider_mod.requests, "post", return_value=Resp()
+        ):
             result = p.chat_stream([{"role": "user", "content": "q"}])
         self.assertEqual(result["reasoning"], "")
 
@@ -100,6 +111,7 @@ class TestReasoningStreaming(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Self-review pass
 # ---------------------------------------------------------------------------
+
 
 def _git_repo(root):
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
@@ -224,6 +236,7 @@ class TestSelfReview(unittest.TestCase):
 # Auto-fix loop
 # ---------------------------------------------------------------------------
 
+
 class _LoopProvider:
     model = "fake"
     api_base = "http://localhost"
@@ -289,6 +302,7 @@ class TestAutoFixLoop(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Config plumbing
 # ---------------------------------------------------------------------------
+
 
 class TestConfigM4Keys(unittest.TestCase):
     def test_self_review_and_loop_max_pass_through(self):

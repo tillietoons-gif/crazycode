@@ -11,6 +11,7 @@ import html
 import json
 import time
 from typing import Any, Dict, List
+
 from pycode.tui import redact_text
 
 _ROLE_META = {
@@ -45,7 +46,7 @@ def _tool_calls_block(tool_calls: List[Dict[str, Any]]) -> str:
         pretty = redact_text(pretty)
         out.append(
             f'<details class="tc"><summary><span class="badge">{name}</span>'
-            f'</summary><pre>{html.escape(pretty)}</pre></details>'
+            f"</summary><pre>{html.escape(pretty)}</pre></details>"
         )
     return "\n".join(out)
 

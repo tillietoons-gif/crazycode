@@ -17,18 +17,22 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from pycode.tui import c, dim, bold
+from pycode.tui import bold, c, dim
 
 
 def _git_numstat(paths: List[str], root: str) -> Dict[str, Dict[str, int]]:
     """Map path -> {add, del} for the given paths (empty on any failure)."""
     import subprocess
+
     if not paths:
         return {}
     try:
         proc = subprocess.run(
             ["git", "diff", "--numstat", "--"] + paths,
-            cwd=root, capture_output=True, text=True, timeout=15,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         out: Dict[str, Dict[str, int]] = {}
         for line in (proc.stdout or "").splitlines():
@@ -45,16 +49,20 @@ def _git_numstat(paths: List[str], root: str) -> Dict[str, Dict[str, int]]:
         return {}
 
 
-def summarize_turn(tool_calls: int, duration_s: float, touched: List[str],
-                   root: str, reasoning: bool = False) -> Dict[str, Any]:
+def summarize_turn(
+    tool_calls: int,
+    duration_s: float,
+    touched: List[str],
+    root: str,
+    reasoning: bool = False,
+) -> Dict[str, Any]:
     """Build the data model for the panel (no rendering)."""
     numstat = _git_numstat(sorted(set(touched)), root)
     files = []
     for path in sorted(set(touched)):
         rel = os.path.relpath(path, root) if not os.path.isabs(path) else path
         stats = numstat.get(path) or numstat.get(rel) or {}
-        files.append({"path": rel, "add": stats.get("add"),
-                      "del": stats.get("del")})
+        files.append({"path": rel, "add": stats.get("add"), "del": stats.get("del")})
     return {
         "tool_calls": tool_calls,
         "duration_s": round(duration_s, 1),
@@ -104,13 +112,16 @@ def render_summary(summary: Dict[str, Any], width: int = 58) -> str:
         for f in files:
             path = f["path"]
             stat = _fmt_stat(f.get("add"), f.get("del"))
-            stat_plain_len = (len(f"+{f['add']}") if f.get("add") is not None else 0) + \
-                             (len(f"−{f['del']}") if f.get("del") is not None else 0)
+            stat_plain_len = (
+                len(f"+{f['add']}") if f.get("add") is not None else 0
+            ) + (len(f"−{f['del']}") if f.get("del") is not None else 0)
             pad = width - 4 - len(path) - stat_plain_len
             if pad < 1:
-                path = path[:max(1, len(path) + pad - 3)] + "..."
+                path = path[: max(1, len(path) + pad - 3)] + "..."
                 pad = max(1, width - 4 - len(path) - stat_plain_len)
-            lines.append(f"{dim(v)} {c('magenta', '✎')} {path}{' ' * pad}{stat} {dim(v)}")
+            lines.append(
+                f"{dim(v)} {c('magenta', '✎')} {path}{' ' * pad}{stat} {dim(v)}"
+            )
     else:
         lines.append(border(tl, tr))
     lines.append(border(bl, br))
@@ -124,4 +135,5 @@ def _head_pad(head: str, width: int) -> str:
 
 def print_summary(summary: Dict[str, Any], width: int = 58) -> None:
     import sys
+
     print(render_summary(summary, width), file=sys.stderr, flush=True)

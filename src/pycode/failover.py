@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pycode.provider import LLMProvider, LLMProviderError, accepts_kwarg
 from pycode.cost import pricing_for
+from pycode.provider import LLMProvider, LLMProviderError, accepts_kwarg
 
 
 class ProviderConfig:
@@ -113,7 +113,9 @@ class FailoverProvider:
     def chat(self, messages: List[Dict[str, Any]], **kwargs) -> str:
         return self.chat_stream(messages, **kwargs).get("content", "")
 
-    def _record_usage(self, tracker: Any, p: ProviderConfig, resp: Dict[str, Any]) -> None:
+    def _record_usage(
+        self, tracker: Any, p: ProviderConfig, resp: Dict[str, Any]
+    ) -> None:
         """Update tracker.model/pricing to the provider that succeeded, then record."""
         usage = resp.get("usage") if isinstance(resp, dict) else None
         if tracker is not None:

@@ -38,9 +38,13 @@ PRESETS: Dict[str, Dict[str, str]] = {
 }
 
 
-def get_preset(name: str, model: Optional[str] = None,
-               api_key: Optional[str] = None, api_base: Optional[str] = None,
-               key_env_var: Optional[str] = None) -> Dict[str, Any]:
+def get_preset(
+    name: str,
+    model: Optional[str] = None,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+    key_env_var: Optional[str] = None,
+) -> Dict[str, Any]:
     """Return provider config for a named preset.
 
     Args:
@@ -78,7 +82,11 @@ def detect_preset() -> Dict[str, Any]:
     explicit_key = os.getenv("PYCODE_API_KEY", "")
     explicit_model = os.getenv("PYCODE_MODEL", "")
     if explicit_base or explicit_key:
-        cfg = {"api_key": explicit_key, "api_base": explicit_base, "model": explicit_model or "gpt-4o"}
+        cfg = {
+            "api_key": explicit_key,
+            "api_base": explicit_base,
+            "model": explicit_model or "gpt-4o",
+        }
         if cfg["api_base"]:
             cfg["api_base"] = cfg["api_base"].rstrip("/")
         return {k: v for k, v in cfg.items() if v}

@@ -23,7 +23,8 @@ from pycode.tui import c, dim, tool_badge
 @dataclass
 class SubagentEvent:
     """One line in a subagent trace."""
-    kind: str            # 'start' | 'tool' | 'end'
+
+    kind: str  # 'start' | 'tool' | 'end'
     label: str
     detail: str = ""
     ok: bool = True
@@ -48,8 +49,7 @@ class SubagentTrace:
         self.events.append(SubagentEvent("tool", f"{glyph} {badge:<6} {detail}", ok=ok))
 
     def end(self, summary: str) -> None:
-        self.events.append(SubagentEvent(
-            "end", f"[{self.name}] {summary[:80]}"))
+        self.events.append(SubagentEvent("end", f"[{self.name}] {summary[:80]}"))
 
     # ------------------------------------------------------------------
     # Rendering
@@ -86,14 +86,24 @@ class SubagentTrace:
 
     def dump(self, path: str) -> None:
         import json
+
         with open(path, "w", encoding="utf-8") as fh:
             for ev in self.events:
-                fh.write(json.dumps({
-                    "kind": ev.kind, "label": ev.label,
-                    "ok": ev.ok, "ts": ev.ts,
-                }, ensure_ascii=False) + "\n")
+                fh.write(
+                    json.dumps(
+                        {
+                            "kind": ev.kind,
+                            "label": ev.label,
+                            "ok": ev.ok,
+                            "ts": ev.ts,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
 
 
 def sys_has_color() -> bool:
     import sys
+
     return sys.stderr.isatty()

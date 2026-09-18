@@ -8,13 +8,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from pycode.tools import dispatch_tool, is_destructive
 from pycode.agent import Agent
+from pycode.context import find_context_files, load_context
 from pycode.provider import LLMProvider, LLMProviderError
-from pycode.context import load_context, find_context_files
-from pycode.session import (
-    save_session, load_session, latest_session, list_sessions,
-)
+from pycode.session import (latest_session, list_sessions, load_session,
+                            save_session)
+from pycode.tools import dispatch_tool, is_destructive
 
 
 class TestProjectContext(unittest.TestCase):
@@ -102,8 +101,11 @@ class TestDestructiveDetection(unittest.TestCase):
 
     def test_confirm_callback_blocks(self):
         # Decline the write
-        declined = dispatch_tool("write", {"path": "/tmp/should_not_exist", "content": "x"},
-                                 confirm=lambda n, a: False)
+        declined = dispatch_tool(
+            "write",
+            {"path": "/tmp/should_not_exist", "content": "x"},
+            confirm=lambda n, a: False,
+        )
         self.assertIn("declined", declined)
 
     def test_auto_approve_skips_confirm(self):
@@ -111,8 +113,11 @@ class TestDestructiveDetection(unittest.TestCase):
             f.write("orig")
             path = f.name
         try:
-            result = json.loads(dispatch_tool("write", {"path": path, "content": "new"},
-                                              auto_approve=True))
+            result = json.loads(
+                dispatch_tool(
+                    "write", {"path": path, "content": "new"}, auto_approve=True
+                )
+            )
             self.assertTrue(result["ok"])
         finally:
             os.unlink(path)
@@ -133,8 +138,10 @@ class TestLLMProvider(unittest.TestCase):
         class FakeProvider(LLMProvider):
             def chat(self, messages, **kwargs):
                 return "fallback answer"
+
             def chat_stream(self, messages, **kwargs):
                 raise LLMProviderError("streaming unsupported")
+
         p = FakeProvider(api_key="k")
         self.assertEqual(p.chat([{"role": "user", "content": "hi"}]), "fallback answer")
 
@@ -144,6 +151,7 @@ class TestLLMProvider(unittest.TestCase):
         class StubProvider:
             def chat(self, messages, tools=None):
                 return {"content": "ok", "tool_calls": []}
+
             def chat_stream(self, messages, tools=None):
                 raise LLMProviderError("no stream")
 
@@ -160,21 +168,27 @@ class TestAgentIntegration(unittest.TestCase):
         # First call: LLM asks for a bash tool; second call: LLM finalizes.
         class StubProvider:
             call_count = 0
+
             def chat(self, messages, tools=None):
                 StubProvider.call_count += 1
                 if StubProvider.call_count == 1:
                     return {
                         "content": "",
-                        "tool_calls": [{
-                            "id": "call_1",
-                            "type": "function",
-                            "function": {
-                                "name": "bash",
-                                "arguments": json.dumps({"command": "echo agent-test"}),
-                            },
-                        }],
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "bash",
+                                    "arguments": json.dumps(
+                                        {"command": "echo agent-test"}
+                                    ),
+                                },
+                            }
+                        ],
                     }
                 return {"content": "all done", "tool_calls": []}
+
             def chat_stream(self, messages, tools=None):
                 raise LLMProviderError("force fallback")
 

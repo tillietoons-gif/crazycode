@@ -47,9 +47,13 @@ def reset_wizard(home: Optional[str] = None) -> None:
         os.unlink(path)
 
 
-def needs_wizard(has_api_key: bool, interactive: bool,
-                 force: bool = False, no_wizard: bool = False,
-                 home: Optional[str] = None) -> bool:
+def needs_wizard(
+    has_api_key: bool,
+    interactive: bool,
+    force: bool = False,
+    no_wizard: bool = False,
+    home: Optional[str] = None,
+) -> bool:
     """True when the wizard should run this launch."""
     if no_wizard:
         return False
@@ -68,8 +72,9 @@ def _default_output(text: str) -> None:
     print(text, flush=True)
 
 
-def _ask_choice(out, ask, prompt: str, options, allow_default: bool = False,
-                default: str = "") -> str:
+def _ask_choice(
+    out, ask, prompt: str, options, allow_default: bool = False, default: str = ""
+) -> str:
     """Render a numbered menu; returns the chosen option value."""
     for i, name in enumerate(options, 1):
         out(f"  {i}. {name}")
@@ -81,7 +86,10 @@ def _ask_choice(out, ask, prompt: str, options, allow_default: bool = False,
             return options[int(raw) - 1]
         if raw in options:
             return raw
-        out(f"  ? pick 1-{len(options)}" + (" or press Enter for default" if allow_default else ""))
+        out(
+            f"  ? pick 1-{len(options)}"
+            + (" or press Enter for default" if allow_default else "")
+        )
 
 
 def run_wizard(
@@ -136,18 +144,25 @@ def run_wizard(
 
     if not api_key and provider != "ollama":
         out("")
-        out(f"  No key stored. Export it before running: export {preset['env_key']}=sk-...")
+        out(
+            f"  No key stored. Export it before running: export {preset['env_key']}=sk-..."
+        )
 
     out("")
-    out("  Setup complete. Run: pycode \"your task here\"")
+    out('  Setup complete. Run: pycode "your task here"')
     out("")
-    return {"provider": provider, "api_key": api_key, "model": model,
-            "config_path": path or ""}
+    return {
+        "provider": provider,
+        "api_key": api_key,
+        "model": model,
+        "config_path": path or "",
+    }
 
 
 # ---------------------------------------------------------------------------
 # Config writing
 # ---------------------------------------------------------------------------
+
 
 def _quote(value: Any) -> str:
     if isinstance(value, bool):
@@ -179,14 +194,16 @@ def dump_config(cfg: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_config_for(cfg: Dict[str, Any], root: str = ".",
-                     home: Optional[str] = None) -> Optional[str]:
+def write_config_for(
+    cfg: Dict[str, Any], root: str = ".", home: Optional[str] = None
+) -> Optional[str]:
     """Write cfg to the project config when possible, else the user config.
 
     An existing file is parsed and merged (wizard values win); comments are
     not preserved. Returns the path written, or None if both failed.
     """
-    from pycode.config import parse_toml, project_config_path, user_config_paths
+    from pycode.config import (parse_toml, project_config_path,
+                               user_config_paths)
 
     candidates = [project_config_path(root)]
     candidates.extend(user_config_paths(home))

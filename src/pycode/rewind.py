@@ -69,7 +69,9 @@ class RewindManager:
     def list(self) -> List[str]:
         return [f"#{cp.index}: {cp.label}" for cp in self.checkpoints]
 
-    def rewind_to(self, index: int, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def rewind_to(
+        self, index: int, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Return the messages list for checkpoint `index` (does not mutate the
         agent; the caller assigns the result back to agent.messages)."""
         cp = self.checkpoints[index]
@@ -80,7 +82,9 @@ class RewindManager:
             return None
         return copy.deepcopy(self.checkpoints[-1].messages)
 
-    def branch(self, index: int, new_messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def branch(
+        self, index: int, new_messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Create a branch: take checkpoint `index` and append `new_messages`."""
         cp = self.checkpoints[index]
         branch_msgs = copy.deepcopy(cp.messages)
@@ -96,7 +100,9 @@ class RewindManager:
     def save_branches(self, path: str) -> int:
         with open(path, "w", encoding="utf-8") as fh:
             for cp in self.checkpoints:
-                fh.write(json.dumps(cp.to_dict(), ensure_ascii=False, default=str) + "\n")
+                fh.write(
+                    json.dumps(cp.to_dict(), ensure_ascii=False, default=str) + "\n"
+                )
         return len(self.checkpoints)
 
     @staticmethod

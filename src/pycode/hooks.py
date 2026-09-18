@@ -80,6 +80,7 @@ class HookRunner:
     def from_file(cls, path: str) -> "HookRunner":
         """Build from a TOML file's ``[hooks]`` section."""
         from pycode.config import parse_toml
+
         try:
             with open(path, encoding="utf-8") as fh:
                 return cls.from_config(parse_toml(fh.read()))
@@ -90,7 +91,9 @@ class HookRunner:
     def enabled(self) -> bool:
         return bool(self.commands)
 
-    def emit(self, event: str, context: Optional[Dict[str, Any]] = None) -> List[HookResult]:
+    def emit(
+        self, event: str, context: Optional[Dict[str, Any]] = None
+    ) -> List[HookResult]:
         """Fire all commands registered for ``event``. Never raises."""
         results: List[HookResult] = []
         for template in self.commands.get(event, []):
@@ -123,7 +126,9 @@ class HookRunner:
         return "\n".join(lines)
 
 
-def hook_context(tool: str, args: Dict[str, Any], ok: Optional[bool] = None) -> Dict[str, str]:
+def hook_context(
+    tool: str, args: Dict[str, Any], ok: Optional[bool] = None
+) -> Dict[str, str]:
     """Build the placeholder context dict for a tool hook."""
     ctx = {
         "tool": tool,

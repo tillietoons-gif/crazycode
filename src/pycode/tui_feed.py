@@ -165,8 +165,13 @@ class ActivityFeed:
     ) -> FeedEntry:
         started = self._inflight.pop(tc_id, time.time())
         entry = FeedEntry(
-            tool=tool, args=args, result=result, ok=ok,
-            started_at=started, finished_at=time.time(), mcp=mcp,
+            tool=tool,
+            args=args,
+            result=result,
+            ok=ok,
+            started_at=started,
+            finished_at=time.time(),
+            mcp=mcp,
         )
         self.entries.append(entry)
         return entry
@@ -209,12 +214,22 @@ class ActivityFeed:
         """Write the feed to a JSONL file (one entry per line)."""
         with open(path, "w", encoding="utf-8") as fh:
             for e in self.entries:
-                fh.write(_json.dumps({
-                    "tool": e.tool, "args": e.args, "ok": e.ok,
-                    "mcp": e.mcp, "duration_ms": e.duration_ms,
-                    "detail": e.detail(),
-                    "result_preview": e.result[:500],
-                }, ensure_ascii=False, default=str) + "\n")
+                fh.write(
+                    _json.dumps(
+                        {
+                            "tool": e.tool,
+                            "args": e.args,
+                            "ok": e.ok,
+                            "mcp": e.mcp,
+                            "duration_ms": e.duration_ms,
+                            "detail": e.detail(),
+                            "result_preview": e.result[:500],
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    + "\n"
+                )
 
     def stats(self) -> Dict[str, int]:
         ok = sum(1 for e in self.entries if e.ok)

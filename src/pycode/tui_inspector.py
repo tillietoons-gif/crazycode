@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pycode.tui import c, dim, bold
+from pycode.tui import bold, c, dim
 
 
 def provider_status(provider) -> str:
@@ -28,7 +28,9 @@ def provider_status(provider) -> str:
     else:
         # single LLMProvider
         lines.append(bold("provider:"))
-        lines.append(f"  • {getattr(provider, 'model', '(unknown)')}  @ {dim(getattr(provider, 'api_base', '(unknown)'))}")
+        lines.append(
+            f"  • {getattr(provider, 'model', '(unknown)')}  @ {dim(getattr(provider, 'api_base', '(unknown)'))}"
+        )
     return "\n".join(lines)
 
 

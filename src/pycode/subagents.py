@@ -40,7 +40,9 @@ class Subagent:
 
         # Build a child agent that shares the parent's provider + config but
         # has a fresh, focused conversation.
-        from pycode.agent import Agent  # deferred: avoid circular import at module load
+        from pycode.agent import \
+            Agent  # deferred: avoid circular import at module load
+
         provider = parent.provider
         child_cfg = dict(
             api_key=provider.api_key,
@@ -92,6 +94,7 @@ class Subagent:
 # Registry + dispatch for the LLM-facing `task` tool
 # ---------------------------------------------------------------------------
 
+
 class SubagentRegistry:
     """Holds subagent definitions and runs them on demand."""
 
@@ -109,20 +112,31 @@ class SubagentRegistry:
         max_iterations: Optional[int] = None,
     ) -> Subagent:
         sa = Subagent(
-            self.parent, name, task,
-            system_prompt=system_prompt, tools=tools,
-            model=model, max_iterations=max_iterations,
+            self.parent,
+            name,
+            task,
+            system_prompt=system_prompt,
+            tools=tools,
+            model=model,
+            max_iterations=max_iterations,
         )
         self._active[sa.name] = sa
         return sa
 
-    def run_task(self, task: str, system_prompt: Optional[str] = None,
-                 tools: Optional[List[str]] = None,
-                 model: Optional[str] = None) -> str:
+    def run_task(
+        self,
+        task: str,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[str]] = None,
+        model: Optional[str] = None,
+    ) -> str:
         """Spawn a subagent for a one-off task and return its summary."""
         sa = self.spawn(
-            "task-runner", task,
-            system_prompt=system_prompt, tools=tools, model=model,
+            "task-runner",
+            task,
+            system_prompt=system_prompt,
+            tools=tools,
+            model=model,
         )
         sa.result = sa.run()
         return sa.as_tool_result()
@@ -142,11 +156,23 @@ def task_tool_schema() -> Dict[str, Any]:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "task": {"type": "string", "description": "What the subagent should do"},
-                    "system_prompt": {"type": "string", "description": "Optional focused instructions"},
-                    "tools": {"type": "array", "items": {"type": "string"},
-                              "description": "Optional whitelist of tools the subagent may use"},
-                    "model": {"type": "string", "description": "Optional model override"},
+                    "task": {
+                        "type": "string",
+                        "description": "What the subagent should do",
+                    },
+                    "system_prompt": {
+                        "type": "string",
+                        "description": "Optional focused instructions",
+                    },
+                    "tools": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional whitelist of tools the subagent may use",
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Optional model override",
+                    },
                 },
                 "required": ["task"],
             },

@@ -14,18 +14,29 @@ from typing import Optional
 # ANSI colors (no external deps)
 # ---------------------------------------------------------------------------
 
-_COLOR_NAMES = ["reset", "bold", "dim", "red", "green", "yellow", "blue", "magenta", "cyan", "gray"]
+_COLOR_NAMES = [
+    "reset",
+    "bold",
+    "dim",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "gray",
+]
 _ANSI = {
-        "reset": "\033[0m",
-        "bold": "\033[1m",
-        "dim": "\033[2m",
-        "red": "\033[31m",
-        "green": "\033[32m",
-        "yellow": "\033[33m",
-        "blue": "\033[34m",
-        "magenta": "\033[35m",
-        "cyan": "\033[36m",
-        "gray": "\033[90m",
+    "reset": "\033[0m",
+    "bold": "\033[1m",
+    "dim": "\033[2m",
+    "red": "\033[31m",
+    "green": "\033[32m",
+    "yellow": "\033[33m",
+    "blue": "\033[34m",
+    "magenta": "\033[35m",
+    "cyan": "\033[36m",
+    "gray": "\033[90m",
 }
 _C = dict(_ANSI)
 
@@ -35,7 +46,8 @@ def configure_colors(mode: str = "auto") -> str:
     if mode not in ("auto", "always", "never"):
         raise ValueError(f"unknown color mode: {mode}")
     enabled = mode == "always" or (
-        mode == "auto" and not os.getenv("NO_COLOR")
+        mode == "auto"
+        and not os.getenv("NO_COLOR")
         and (sys.stdout.isatty() or sys.stderr.isatty())
     )
     _C.update(_ANSI if enabled else {name: "" for name in _COLOR_NAMES})
@@ -143,13 +155,19 @@ class Spinner:
             i += 1
             time.sleep(0.1)
         # clear the line
-        print("\r" + " " * (self._last_width + 4) + "\r", end="", file=sys.stderr, flush=True)
+        print(
+            "\r" + " " * (self._last_width + 4) + "\r",
+            end="",
+            file=sys.stderr,
+            flush=True,
+        )
 
     def start(self) -> None:
         if not self._enabled:
             print(dim(f"... {self.message}"), file=sys.stderr, flush=True)
             return
         import threading
+
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -173,7 +191,9 @@ class Spinner:
 
 
 def print_tool_start(name: str, args_preview: str) -> None:
-    print(f"\n{tool_badge(name)} {dim(args_preview[:120])}", file=sys.stderr, flush=True)
+    print(
+        f"\n{tool_badge(name)} {dim(args_preview[:120])}", file=sys.stderr, flush=True
+    )
 
 
 def print_tool_result(name: str, ok: bool, preview: str) -> None:
@@ -195,9 +215,13 @@ def print_assistant(content: str) -> None:
 
 def print_banner() -> None:
     from pycode import __version__
+
     print("=" * 56, file=sys.stderr, flush=True)
-    print(bold(c("cyan", f"  pycode v{__version__} - Python AI Coding Agent")),
-          file=sys.stderr, flush=True)
+    print(
+        bold(c("cyan", f"  pycode v{__version__} - Python AI Coding Agent")),
+        file=sys.stderr,
+        flush=True,
+    )
     print("=" * 56, file=sys.stderr, flush=True)
     print(
         "  quit/exit to stop, :clear to reset, /resume to load session\n"
@@ -247,7 +271,11 @@ def _issue_card(card: dict, selected: bool = False) -> list[str]:
     title = str(card.get("title", "Untitled issue"))
     status = str(card.get("status", "Open"))
     priority = str(card.get("priority", "Medium"))
-    tone = "good" if status.lower() in {"done", "resolved"} else "warn" if status.lower() in {"in review", "in progress"} else "info"
+    tone = (
+        "good"
+        if status.lower() in {"done", "resolved"}
+        else "warn" if status.lower() in {"in review", "in progress"} else "info"
+    )
     marker = c("cyan", "▶") if selected else " "
     title = title[:44] + ("…" if len(title) > 44 else "")
     return [
@@ -259,7 +287,9 @@ def _issue_card(card: dict, selected: bool = False) -> list[str]:
 def _build_nav(nav, selected_name: str | None) -> list[str]:
     lines: list[str] = []
     for name, count in nav:
-        active = name == selected_name or (selected_name is None and name.lower() == "active")
+        active = name == selected_name or (
+            selected_name is None and name.lower() == "active"
+        )
         prefix = c("cyan", "●") if active else c("gray", "○")
         row = f"{prefix} {name}"
         if count is not None:
@@ -296,7 +326,9 @@ def _git_project_health(project_root: str) -> dict:
             check=False,
         )
         if status.returncode == 0:
-            changed = [line[3:].strip() for line in status.stdout.splitlines() if line.strip()]
+            changed = [
+                line[3:].strip() for line in status.stdout.splitlines() if line.strip()
+            ]
             health["changed_files"] = changed
             health["dirty_files"] = len(changed)
             health["status"] = "dirty" if changed else "clean"
@@ -313,7 +345,9 @@ def _git_project_health(project_root: str) -> dict:
     return health
 
 
-def build_dashboard_state(project_root: str | None = None, title: str = "pycode") -> dict:
+def build_dashboard_state(
+    project_root: str | None = None, title: str = "pycode"
+) -> dict:
     """Build dashboard data from the actual project and session state."""
     root = project_root or os.getcwd()
     project_name = os.path.basename(os.path.abspath(root)) or "workspace"
@@ -325,7 +359,14 @@ def build_dashboard_state(project_root: str | None = None, title: str = "pycode"
 
     session_dir = os.path.join(root, ".pycode-sessions")
     if os.path.isdir(session_dir):
-        session_files = sorted([os.path.join(session_dir, p) for p in os.listdir(session_dir) if p.endswith(".jsonl")], reverse=True)
+        session_files = sorted(
+            [
+                os.path.join(session_dir, p)
+                for p in os.listdir(session_dir)
+                if p.endswith(".jsonl")
+            ],
+            reverse=True,
+        )
         session_count = len(session_files)
         for session_path in session_files[:8]:
             try:
@@ -335,40 +376,52 @@ def build_dashboard_state(project_root: str | None = None, title: str = "pycode"
                 continue
             user_text = ""
             for msg in messages:
-                content = msg.get("content") if isinstance(msg.get("content"), str) else ""
+                content = (
+                    msg.get("content") if isinstance(msg.get("content"), str) else ""
+                )
                 if msg.get("role") == "user" and content:
                     user_text = " ".join(content.split())
                     break
             if not user_text:
                 user_text = os.path.basename(session_path)
             updated = os.path.getmtime(session_path)
-            cards.append({
-                "id": f"S-{len(cards)+1:03d}",
-                "title": user_text[:72],
-                "status": "In review" if len(cards) % 2 else "Queued",
-                "priority": "High" if len(cards) % 3 else "Med",
-                "source": "session",
-                "owner": "pycode",
-                "due": "today" if len(cards) % 2 else "this week",
-                "tags": ["session", "active" if len(cards) % 2 else "queued"],
-                "estimate": "30m" if len(cards) % 2 else "60m",
-                "last_update": time.strftime("%Y-%m-%d %H:%M", time.localtime(updated)),
-            })
-            last_activity = os.path.basename(session_path).replace("session-", "").replace(".jsonl", "")
+            cards.append(
+                {
+                    "id": f"S-{len(cards)+1:03d}",
+                    "title": user_text[:72],
+                    "status": "In review" if len(cards) % 2 else "Queued",
+                    "priority": "High" if len(cards) % 3 else "Med",
+                    "source": "session",
+                    "owner": "pycode",
+                    "due": "today" if len(cards) % 2 else "this week",
+                    "tags": ["session", "active" if len(cards) % 2 else "queued"],
+                    "estimate": "30m" if len(cards) % 2 else "60m",
+                    "last_update": time.strftime(
+                        "%Y-%m-%d %H:%M", time.localtime(updated)
+                    ),
+                }
+            )
+            last_activity = (
+                os.path.basename(session_path)
+                .replace("session-", "")
+                .replace(".jsonl", "")
+            )
 
     if not cards:
-        cards = [{
-            "id": "SYS-001",
-            "title": "Project is ready for the next task",
-            "status": "Queued",
-            "priority": "Low",
-            "source": "system",
-            "owner": "pycode",
-            "due": "today",
-            "tags": ["project", "ready"],
-            "estimate": "15m",
-            "last_update": time.strftime("%Y-%m-%d %H:%M", time.localtime()),
-        }]
+        cards = [
+            {
+                "id": "SYS-001",
+                "title": "Project is ready for the next task",
+                "status": "Queued",
+                "priority": "Low",
+                "source": "system",
+                "owner": "pycode",
+                "due": "today",
+                "tags": ["project", "ready"],
+                "estimate": "15m",
+                "last_update": time.strftime("%Y-%m-%d %H:%M", time.localtime()),
+            }
+        ]
         last_activity = "Ready for work"
 
     nav[0] = ("Inbox", len(cards))
@@ -452,13 +505,15 @@ def render_linear_dashboard(
 
     issue_lines: list[str] = []
     for idx, card in enumerate(cards[:10]):
-        issue_lines.extend(_issue_card(card, selected and card.get("id") == selected.get("id")))
+        issue_lines.extend(
+            _issue_card(card, selected and card.get("id") == selected.get("id"))
+        )
     center_panel = _panel("issues", issue_lines, center_w)
 
     detail = selected or {}
     detail_lines = [
         f"{c('gray', str(detail.get('id', 'ENG-000')))}  {_status_chip(str(detail.get('status', 'Queued')), 'info')}",
-        bold(str(detail.get('title', 'Untitled issue'))),
+        bold(str(detail.get("title", "Untitled issue"))),
         "",
         f"Priority: {_status_chip(str(detail.get('priority', 'Medium')), 'warn' if str(detail.get('priority', 'Medium')).lower() in {'high', 'med'} else 'good')}",
         f"Owner: {c('green', str(detail.get('owner', 'pycode')))}",
@@ -490,15 +545,17 @@ def render_linear_dashboard(
         rows.append(f"{left_lines[i]}  {center_lines[i]}  {right_lines[i]}")
 
     top = "╭" + "─" * (total - 2) + "╮"
-    status_bar = " ".join([
-        c("green", "● live"),
-        c("gray", "·"),
-        c("cyan", f"{stats.get('open_cards', len(cards))} open"),
-        c("gray", "·"),
-        c("yellow", f"{stats.get('review_items', 0)} review"),
-        c("gray", "·"),
-        c("magenta", f"{stats.get('session_count', 0)} sessions"),
-    ])
+    status_bar = " ".join(
+        [
+            c("green", "● live"),
+            c("gray", "·"),
+            c("cyan", f"{stats.get('open_cards', len(cards))} open"),
+            c("gray", "·"),
+            c("yellow", f"{stats.get('review_items', 0)} review"),
+            c("gray", "·"),
+            c("magenta", f"{stats.get('session_count', 0)} sessions"),
+        ]
+    )
     header_line = f"{header} {dim('·')} {status_bar}"
     middle = f"│ {header_line:<{total - 5}} │"
     body = "\n".join(rows)
@@ -513,15 +570,24 @@ class LiveDashboard:
     The board redraws itself into the same terminal area on each key press.
     """
 
-    def __init__(self, nav=None, cards=None, selected_index: int = 0, title: str = "pycode",
-                 project: str = "workspace", project_root: str | None = None):
+    def __init__(
+        self,
+        nav=None,
+        cards=None,
+        selected_index: int = 0,
+        title: str = "pycode",
+        project: str = "workspace",
+        project_root: str | None = None,
+    ):
         self.project_root = project_root or os.getcwd()
         state = build_dashboard_state(self.project_root, title=title)
         self.nav = nav or state["nav"]
         self.cards = cards or state["cards"]
         self.title = title or state["title"]
         self.project = project or state["project"]
-        self.selected_index = max(0, min(selected_index, len(self.cards) - 1)) if self.cards else 0
+        self.selected_index = (
+            max(0, min(selected_index, len(self.cards) - 1)) if self.cards else 0
+        )
         self.state = {
             "filter": "all",
             "focus": "active",
@@ -549,11 +615,17 @@ class LiveDashboard:
         cards = list(self.cards)
         query = self.state["query"].strip().lower()
         if self.state["show_only"]:
-            cards = [c for c in cards if str(c.get("status", "")).lower() == self.state["show_only"].lower()]
+            cards = [
+                c
+                for c in cards
+                if str(c.get("status", "")).lower() == self.state["show_only"].lower()
+            ]
         if query:
             cards = [
-                c for c in cards
-                if query in str(c.get("title", "")).lower() or query in str(c.get("id", "")).lower()
+                c
+                for c in cards
+                if query in str(c.get("title", "")).lower()
+                or query in str(c.get("id", "")).lower()
             ]
         return cards
 
@@ -654,7 +726,10 @@ class LiveDashboard:
 
         palette_lines = [
             c("cyan", "COMMAND PALETTE"),
-            *[f"  {c('gray', idx + 1)}) {action}" for idx, action in enumerate(palette)],
+            *[
+                f"  {c('gray', idx + 1)}) {action}"
+                for idx, action in enumerate(palette)
+            ],
         ]
         palette_panel = _panel("commands", palette_lines, 38)
         return base + "\n\n" + palette_panel
@@ -668,6 +743,7 @@ class LiveDashboard:
             return
         import termios
         import tty
+
         fd = stream.fileno()
         old = termios.tcgetattr(fd)
         try:
@@ -696,8 +772,19 @@ class LiveDashboard:
 
 
 __all__ = [
-    "colors_enabled", "c", "bold", "dim", "redact_text", "tool_badge",
-    "result_badge", "Spinner", "print_tool_start", "print_tool_result",
-    "print_permission_denied", "print_assistant", "print_banner",
-    "render_linear_dashboard", "LiveDashboard",
+    "colors_enabled",
+    "c",
+    "bold",
+    "dim",
+    "redact_text",
+    "tool_badge",
+    "result_badge",
+    "Spinner",
+    "print_tool_start",
+    "print_tool_result",
+    "print_permission_denied",
+    "print_assistant",
+    "print_banner",
+    "render_linear_dashboard",
+    "LiveDashboard",
 ]

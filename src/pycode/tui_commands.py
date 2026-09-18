@@ -80,14 +80,19 @@ def canonicalize(user_input: str) -> str:
 def _complete(prefix: str) -> List[str]:
     """Return candidate completions for `prefix`."""
     cands: List[str] = []
-    all_cmds = sorted(set(list(COMMANDS.keys()) + list(ALIASES.keys()) + list(USER_COMMANDS)))
+    all_cmds = sorted(
+        set(list(COMMANDS.keys()) + list(ALIASES.keys()) + list(USER_COMMANDS))
+    )
     for cmd in all_cmds:
-        if cmd.startswith(prefix) or (prefix.lstrip("/:") and cmd.startswith(prefix.lstrip("/:"))):
+        if cmd.startswith(prefix) or (
+            prefix.lstrip("/:") and cmd.startswith(prefix.lstrip("/:"))
+        ):
             cands.append(cmd)
     # also complete known session filenames for /save, /resume, /sessions
     if prefix.split()[0] in ("/save", "/resume", "/sessions", "/branch"):
         try:
             from pycode.session import list_sessions
+
             for s in list_sessions()[:8]:
                 base = os.path.basename(s)
                 if base.startswith(prefix.split()[-1] if " " in prefix else ""):
