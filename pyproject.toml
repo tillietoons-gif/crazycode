@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycode"
-version = "1.2.0"
+version = "1.2.1"
 description = "A Python-based AI coding agent (Claude Code alternative)"
 requires-python = ">=3.10"
 dependencies = [

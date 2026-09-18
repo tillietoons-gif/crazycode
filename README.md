@@ -10,7 +10,7 @@ Anthropic, Ollama, Venice, OpenRouter, and more).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  pycode · v1.2.0                                                     │
+│  pycode · v1.2.1                                                     │
 │                                                                      │
 │  15 tools · 5 provider presets · MCP plugins · subagents             │
 │  project symbol map · background jobs · hooks · themes               │
